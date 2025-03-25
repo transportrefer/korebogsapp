@@ -4,13 +4,15 @@
  */
 
 // Configuration for Google OAuth
-// These values will be loaded from environment variables
 const AUTH_CONFIG = {
-  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || 'YOUR_CLIENT_ID.apps.googleusercontent.com', // Replace with your client ID from Google Cloud Console
-  apiKey: import.meta.env.VITE_GOOGLE_API_KEY || 'YOUR_API_KEY', // Replace with your API key from Google Cloud Console
+  clientId: '129709058864-dmk39lre4jrop8ch05t1taeggmchhoqs.apps.googleusercontent.com',
+  apiKey: import.meta.env.VITE_GOOGLE_API_KEY || '', // Will need to be set in your .env file
   scopes: [
     'https://www.googleapis.com/auth/drive.file', // For Google Sheets
     'https://www.googleapis.com/auth/spreadsheets', // For Google Sheets
+  ],
+  discoveryDocs: [
+    'https://sheets.googleapis.com/$discovery/rest?version=v4',
   ]
 };
 
@@ -18,9 +20,6 @@ const AUTH_CONFIG = {
 let googleAuth = null;
 let isSignedIn = false;
 let userData = null;
-
-// MOCK IMPLEMENTATION: To be replaced with real Google OAuth integration
-// This file will be modified when Google OAuth credentials are available
 
 // DOM elements for authentication
 let loginBtn;
@@ -32,14 +31,11 @@ let userProfile;
 let userAvatar;
 let userName;
 
-// Mock user state
-let currentUser = null;
-
 /**
  * Initialize the authentication module
  */
 export async function initAuth() {
-  console.log('Initializing auth module (MOCK VERSION)');
+  console.log('Initializing auth module');
   
   // Initialize DOM elements
   loginBtn = document.getElementById('login-btn');
@@ -56,23 +52,62 @@ export async function initAuth() {
   loginMainBtn.addEventListener('click', handleLogin);
   logoutBtn.addEventListener('click', handleLogout);
   
-  // Check for existing session (in real implementation, this would verify the token)
-  const savedUser = localStorage.getItem('mockUser');
-  if (savedUser) {
-    currentUser = JSON.parse(savedUser);
-    updateUIForAuthenticatedUser();
-  } else {
-    updateUIForUnauthenticatedUser();
-  }
+  // Load the Google API client
+  await loadGoogleAPIClient();
   
-  loginBtn.style.display = 'block';
+  // Set up Google Auth
+  await initGoogleAuth();
   
   return {
-    isAuthenticated: () => !!currentUser,
-    getCurrentUser: () => currentUser,
+    isAuthenticated: () => isSignedIn,
+    getCurrentUser: () => userData,
     login: handleLogin,
     logout: handleLogout
   };
+}
+
+/**
+ * Load the Google API client script
+ */
+function loadGoogleAPIClient() {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://apis.google.com/js/api.js';
+    script.onload = () => {
+      gapi.load('client:auth2', resolve);
+    };
+    script.onerror = reject;
+    document.body.appendChild(script);
+  });
+}
+
+/**
+ * Initialize Google Auth
+ */
+async function initGoogleAuth() {
+  try {
+    await gapi.client.init({
+      apiKey: AUTH_CONFIG.apiKey,
+      clientId: AUTH_CONFIG.clientId,
+      discoveryDocs: AUTH_CONFIG.discoveryDocs,
+      scope: AUTH_CONFIG.scopes.join(' ')
+    });
+    
+    // Get the GoogleAuth instance
+    googleAuth = gapi.auth2.getAuthInstance();
+    
+    // Update sign-in state listeners
+    isSignedIn = googleAuth.isSignedIn.get();
+    googleAuth.isSignedIn.listen(updateSigninStatus);
+    
+    // Handle the initial sign-in state
+    updateSigninStatus(isSignedIn);
+    
+    return googleAuth;
+  } catch (error) {
+    console.error('Error initializing Google Auth:', error);
+    throw error;
+  }
 }
 
 /**
@@ -80,47 +115,117 @@ export async function initAuth() {
  * @returns {boolean} True if authenticated, false otherwise
  */
 export async function checkAuthStatus() {
-  // In the real implementation, this would check if the OAuth token is valid
-  return !!currentUser;
+  if (!googleAuth) {
+    try {
+      await initGoogleAuth();
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+      return false;
+    }
+  }
+  return googleAuth.isSignedIn.get();
+}
+
+/**
+ * Update sign-in status based on current state
+ * @param {boolean} isSignedIn - Whether user is signed in
+ */
+function updateSigninStatus(isSignedIn) {
+  if (isSignedIn) {
+    // User is signed in
+    const user = googleAuth.currentUser.get();
+    const profile = user.getBasicProfile();
+    
+    userData = {
+      id: profile.getId(),
+      name: profile.getName(),
+      email: profile.getEmail(),
+      avatarUrl: profile.getImageUrl()
+    };
+    
+    updateUIForAuthenticatedUser();
+  } else {
+    // User is signed out
+    userData = null;
+    updateUIForUnauthenticatedUser();
+  }
 }
 
 /**
  * Handle login button click
  */
 async function handleLogin() {
-  console.log('Login clicked (MOCK VERSION)');
+  console.log('Login clicked');
   
-  // In the real version, this would redirect to Google OAuth
-  // For now, we'll create a mock user
-  currentUser = {
-    id: 'mock-user-123',
-    name: 'Test Bruger',
-    email: 'test@example.com',
-    avatarUrl: 'https://ui-avatars.com/api/?name=Test+Bruger&background=random'
-  };
+  if (!googleAuth) {
+    try {
+      await initGoogleAuth();
+    } catch (error) {
+      console.error('Error initializing Google Auth for login:', error);
+      return;
+    }
+  }
   
-  // Save to local storage
-  localStorage.setItem('mockUser', JSON.stringify(currentUser));
+  try {
+    // Check if we have an auth code from the callback
+    const authCode = localStorage.getItem('auth_code');
+    if (authCode) {
+      // We've been redirected back from the OAuth flow
+      console.log('Auth code found in storage, exchanging for token');
+      
+      // Clear the auth code
+      localStorage.removeItem('auth_code');
+      
+      // In a production app, we would exchange the auth code for tokens here
+      // For Google OAuth, this is handled by the gapi client library, so we just check
+      // if the user is already signed in
+      if (!googleAuth.isSignedIn.get()) {
+        // If not signed in, start the OAuth flow again
+        await startOAuthFlow();
+      }
+    } else {
+      // Start the OAuth flow
+      await startOAuthFlow();
+    }
+  } catch (error) {
+    console.error('Error during sign in:', error);
+  }
+}
+
+/**
+ * Start the OAuth flow
+ */
+async function startOAuthFlow() {
+  // Generate a random state value to prevent CSRF attacks
+  const state = Math.random().toString(36).substring(2, 15);
+  localStorage.setItem('oauth_state', state);
   
-  // Update UI
-  updateUIForAuthenticatedUser();
-  
-  // Return the mock user
-  return currentUser;
+  // Get auth URL from Google
+  try {
+    await googleAuth.signIn();
+  } catch (error) {
+    console.error('Error starting OAuth flow:', error);
+    throw error;
+  }
 }
 
 /**
  * Handle logout button click
  */
 async function handleLogout() {
-  console.log('Logout clicked (MOCK VERSION)');
+  console.log('Logout clicked');
   
-  // Clear user data
-  currentUser = null;
-  localStorage.removeItem('mockUser');
+  if (!googleAuth) {
+    return;
+  }
   
-  // Update UI
-  updateUIForUnauthenticatedUser();
+  try {
+    await googleAuth.signOut();
+    userData = null;
+    updateUIForUnauthenticatedUser();
+  } catch (error) {
+    console.error('Error during sign out:', error);
+  }
 }
 
 /**
@@ -132,12 +237,15 @@ function updateUIForAuthenticatedUser() {
   userProfile.style.display = 'flex';
   
   // Update profile info
-  userAvatar.src = currentUser.avatarUrl;
-  userName.textContent = currentUser.name;
+  userAvatar.src = userData.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(userData.name);
+  userName.textContent = userData.name;
   
   // Show app, hide auth section
   authSection.style.display = 'none';
   appSection.style.display = 'block';
+  
+  // Dispatch event that user is authenticated
+  window.dispatchEvent(new CustomEvent('userAuthenticated', { detail: userData }));
 }
 
 /**
@@ -151,6 +259,9 @@ function updateUIForUnauthenticatedUser() {
   // Show auth section, hide app
   authSection.style.display = 'flex';
   appSection.style.display = 'none';
+  
+  // Dispatch event that user is not authenticated
+  window.dispatchEvent(new CustomEvent('userSignedOut'));
 }
 
 // REAL IMPLEMENTATION TO COME:

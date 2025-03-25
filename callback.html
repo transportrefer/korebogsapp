@@ -30,28 +30,79 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    .error {
+      color: #e74c3c;
+      margin: 20px 0;
+      padding: 10px;
+      border: 1px solid #e74c3c;
+      border-radius: 4px;
+      background-color: #fadbd8;
+      max-width: 80%;
+    }
   </style>
 </head>
 <body>
   <h2>Logger ind...</h2>
   <div class="spinner"></div>
-  <p>Du vil blive omdirigeret automatisk.</p>
+  <p id="status-message">Behandler login...</p>
+  <div id="error-container" class="error" style="display: none;"></div>
   
   <script>
-    // This is a placeholder script that will be replaced with actual OAuth handling
     window.onload = function() {
-      // In the real implementation, this would:
-      // 1. Parse the OAuth response parameters from the URL
-      // 2. Validate the state parameter to prevent CSRF
-      // 3. Exchange the authorization code for tokens
-      // 4. Store the tokens securely
-      // 5. Redirect back to the main application
+      const statusMessage = document.getElementById('status-message');
+      const errorContainer = document.getElementById('error-container');
       
-      // For now, just redirect back to the index page after a short delay
-      setTimeout(function() {
-        window.location.href = "/";
-      }, 2000);
-    }
+      try {
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const state = urlParams.get('state');
+        const error = urlParams.get('error');
+        
+        // Check for errors in the callback
+        if (error) {
+          throw new Error(`Authentication error: ${error}`);
+        }
+        
+        // Validate the state parameter to prevent CSRF attacks
+        const savedState = localStorage.getItem('oauth_state');
+        if (state !== savedState) {
+          throw new Error('Invalid state parameter. Authentication failed.');
+        }
+        
+        // Clear the state from local storage
+        localStorage.removeItem('oauth_state');
+        
+        if (code) {
+          statusMessage.textContent = 'Login gennemført. Omdirigerer...';
+          
+          // Store the code temporarily - we'll exchange it for tokens in the main app
+          localStorage.setItem('auth_code', code);
+          
+          // Redirect back to the main application
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1000);
+        } else {
+          throw new Error('No authorization code received from Google.');
+        }
+      } catch (error) {
+        // Handle errors
+        console.error('Authentication callback error:', error);
+        statusMessage.textContent = 'Der opstod en fejl under login.';
+        errorContainer.textContent = error.message;
+        errorContainer.style.display = 'block';
+        
+        // Add a retry button
+        const retryButton = document.createElement('button');
+        retryButton.textContent = 'Prøv igen';
+        retryButton.style.margin = '20px';
+        retryButton.style.padding = '10px 20px';
+        retryButton.style.cursor = 'pointer';
+        retryButton.onclick = () => window.location.href = '/';
+        document.body.appendChild(retryButton);
+      }
+    };
   </script>
 </body>
 </html> 

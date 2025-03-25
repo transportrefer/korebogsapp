@@ -5,26 +5,83 @@
 
 // Configuration for Google Maps
 const MAPS_CONFIG = {
-  apiKey: 'YOUR_API_KEY', // Same key as in auth.js
+  apiKey: import.meta.env.VITE_GOOGLE_API_KEY || '',
 };
 
 let googleMapsLoaded = false;
-let mapInstance = null;
+let googleMapsAPI = null;
+let autocompleteService = null;
+let distanceMatrixService = null;
+let geocoder = null;
 
 /**
  * Initialize the maps module
  * @returns {Object} Maps module interface
  */
-export function initMaps() {
-  console.log('Initializing maps module (MOCK VERSION)');
+export async function initMaps() {
+  console.log('Initializing maps module');
   
-  // In the real implementation, this would load and initialize the Google Maps API
-  
-  return {
-    calculateDistance,
-    getUserLocation,
-    autocompleteAddress
-  };
+  try {
+    await loadGoogleMapsAPI();
+    console.log('Google Maps API loaded successfully');
+    
+    // Initialize services
+    if (window.google && window.google.maps) {
+      distanceMatrixService = new google.maps.DistanceMatrixService();
+      geocoder = new google.maps.Geocoder();
+      autocompleteService = new google.maps.places.AutocompleteService();
+      
+      googleMapsLoaded = true;
+    }
+    
+    return {
+      calculateDistance,
+      getUserLocation,
+      autocompleteAddress,
+      isLoaded: () => googleMapsLoaded
+    };
+  } catch (error) {
+    console.error('Error initializing Google Maps:', error);
+    return {
+      calculateDistance: mockCalculateDistance,
+      getUserLocation: mockGetUserLocation,
+      autocompleteAddress: mockAutocompleteAddress,
+      isLoaded: () => false
+    };
+  }
+}
+
+/**
+ * Load the Google Maps API
+ * @returns {Promise} Promise that resolves when the API is loaded
+ */
+function loadGoogleMapsAPI() {
+  return new Promise((resolve, reject) => {
+    // Check if API is already loaded
+    if (window.google && window.google.maps) {
+      googleMapsLoaded = true;
+      resolve();
+      return;
+    }
+    
+    // Create script element
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_CONFIG.apiKey}&libraries=places`;
+    script.async = true;
+    script.defer = true;
+    
+    script.onload = () => {
+      googleMapsLoaded = true;
+      resolve();
+    };
+    
+    script.onerror = (error) => {
+      console.error('Google Maps API failed to load:', error);
+      reject(error);
+    };
+    
+    document.head.appendChild(script);
+  });
 }
 
 /**
@@ -34,20 +91,49 @@ export function initMaps() {
  * @returns {Promise<Object>} Object containing distance in km and estimated duration
  */
 export async function calculateDistance(originAddress, destinationAddress) {
-  console.log(`Calculating distance from "${originAddress}" to "${destinationAddress}" (MOCK VERSION)`);
+  console.log(`Calculating distance from "${originAddress}" to "${destinationAddress}"`);
   
-  // In the real implementation, this would call the Google Maps Distance Matrix API
-  // For now, return a randomized distance and duration
+  if (!googleMapsLoaded || !distanceMatrixService) {
+    return mockCalculateDistance(originAddress, destinationAddress);
+  }
   
-  // Simple mock: Generate a somewhat realistic distance (10-100km)
-  const distance = (Math.random() * 90 + 10).toFixed(1);
-  const duration = Math.round(distance * 1.2); // Roughly 1.2 minutes per km
-  
-  return {
-    distance: parseFloat(distance), // In kilometers
-    duration: duration, // In minutes
-    status: 'OK'
-  };
+  try {
+    const response = await new Promise((resolve, reject) => {
+      distanceMatrixService.getDistanceMatrix(
+        {
+          origins: [originAddress],
+          destinations: [destinationAddress],
+          travelMode: google.maps.TravelMode.DRIVING,
+          unitSystem: google.maps.UnitSystem.METRIC
+        },
+        (response, status) => {
+          if (status === 'OK') {
+            resolve(response);
+          } else {
+            reject(new Error(`Distance Matrix request failed with status: ${status}`));
+          }
+        }
+      );
+    });
+    
+    // Extract distance and duration from response
+    if (response.rows[0].elements[0].status === 'OK') {
+      const element = response.rows[0].elements[0];
+      
+      return {
+        distance: element.distance.value / 1000, // Convert meters to kilometers
+        duration: Math.round(element.duration.value / 60), // Convert seconds to minutes
+        distanceText: element.distance.text,
+        durationText: element.duration.text,
+        status: 'OK'
+      };
+    } else {
+      throw new Error(`Route calculation failed with status: ${response.rows[0].elements[0].status}`);
+    }
+  } catch (error) {
+    console.error('Error calculating distance:', error);
+    return mockCalculateDistance(originAddress, destinationAddress);
+  }
 }
 
 /**
@@ -55,24 +141,55 @@ export async function calculateDistance(originAddress, destinationAddress) {
  * @returns {Promise<Object>} Object containing lat/lng and formatted address
  */
 export async function getUserLocation() {
-  console.log('Getting user location (MOCK VERSION)');
+  console.log('Getting user location');
   
-  // In the real implementation, this would use browser's navigator.geolocation
-  // and then reverse geocode with Google Maps API to get address
-  
-  return new Promise((resolve, reject) => {
-    // Simulate a geolocation process
-    setTimeout(() => {
-      // Mock data for Copenhagen
-      resolve({
-        coords: {
-          latitude: 55.676098,
-          longitude: 12.568337
-        },
-        formattedAddress: 'Rådhuspladsen 1, 1550 København'
+  try {
+    // First get the browser geolocation
+    const position = await new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation is not supported by your browser'));
+        return;
+      }
+      
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 0
       });
-    }, 1000); // 1 second delay to simulate loading
-  });
+    });
+    
+    const { latitude, longitude } = position.coords;
+    
+    // If Maps API is not loaded, return just the coordinates
+    if (!googleMapsLoaded || !geocoder) {
+      return {
+        coords: { latitude, longitude },
+        formattedAddress: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+      };
+    }
+    
+    // Otherwise, reverse geocode to get the address
+    const response = await new Promise((resolve, reject) => {
+      geocoder.geocode(
+        { location: { lat: latitude, lng: longitude } },
+        (results, status) => {
+          if (status === 'OK' && results[0]) {
+            resolve(results);
+          } else {
+            reject(new Error(`Geocoding failed with status: ${status}`));
+          }
+        }
+      );
+    });
+    
+    return {
+      coords: { latitude, longitude },
+      formattedAddress: response[0].formatted_address
+    };
+  } catch (error) {
+    console.error('Error getting user location:', error);
+    return mockGetUserLocation();
+  }
 }
 
 /**
@@ -81,9 +198,62 @@ export async function getUserLocation() {
  * @param {Function} onSelect - Callback when address is selected
  */
 export function autocompleteAddress(inputElement, onSelect) {
-  console.log('Setting up address autocomplete (MOCK VERSION)');
+  console.log('Setting up address autocomplete');
   
-  // In the real implementation, this would set up Google Places Autocomplete
+  if (!googleMapsLoaded || !window.google || !window.google.maps) {
+    return mockAutocompleteAddress(inputElement, onSelect);
+  }
+  
+  // Create the autocomplete object
+  const autocomplete = new google.maps.places.Autocomplete(inputElement, {
+    types: ['address'],
+    componentRestrictions: { country: 'dk' } // Restrict to Denmark
+  });
+  
+  // Listen for place selection
+  autocomplete.addListener('place_changed', () => {
+    const place = autocomplete.getPlace();
+    
+    if (place && place.formatted_address) {
+      if (onSelect) {
+        onSelect(place.formatted_address);
+      }
+    }
+  });
+}
+
+// Mock implementations for fallback when Google Maps is not available
+
+function mockCalculateDistance(originAddress, destinationAddress) {
+  console.log(`Using mock distance calculation from "${originAddress}" to "${destinationAddress}"`);
+  
+  // Generate a somewhat realistic distance (10-100km)
+  const distance = (Math.random() * 90 + 10).toFixed(1);
+  const duration = Math.round(distance * 1.2); // Roughly 1.2 minutes per km
+  
+  return {
+    distance: parseFloat(distance), // In kilometers
+    duration: duration, // In minutes
+    distanceText: `${distance} km`,
+    durationText: `${duration} min`,
+    status: 'OK'
+  };
+}
+
+function mockGetUserLocation() {
+  console.log('Using mock user location');
+  
+  return {
+    coords: {
+      latitude: 55.676098,
+      longitude: 12.568337
+    },
+    formattedAddress: 'Rådhuspladsen 1, 1550 København'
+  };
+}
+
+function mockAutocompleteAddress(inputElement, onSelect) {
+  console.log('Using mock address autocomplete');
   
   // Mock implementation with some sample addresses
   const mockAddresses = [
