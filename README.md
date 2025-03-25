@@ -121,4 +121,4 @@ Applikationen integrerer med følgende Google APIs:
 
 ## Licens
 
-Dette projekt er udviklet som et personligt værktøj og er ikke licenceret til kommerciel brug uden tilladelse. 
+Dette projekt er udviklet som et personligt værktøj og er ikke licenceret til kommerciel brug uden tilladelse.
