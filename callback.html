@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Auth Callback</title>
+  <style>
+    body {
+      font-family: 'Open Sans', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+      background-color: #f9f9f9;
+    }
+    .spinner {
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border-left-color: #3498db;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <h2>Logger ind...</h2>
+  <div class="spinner"></div>
+  <p>Du vil blive omdirigeret automatisk.</p>
+  
+  <script>
+    // This is a placeholder script that will be replaced with actual OAuth handling
+    window.onload = function() {
+      // In the real implementation, this would:
+      // 1. Parse the OAuth response parameters from the URL
+      // 2. Validate the state parameter to prevent CSRF
+      // 3. Exchange the authorization code for tokens
+      // 4. Store the tokens securely
+      // 5. Redirect back to the main application
+      
+      // For now, just redirect back to the index page after a short delay
+      setTimeout(function() {
+        window.location.href = "/";
+      }, 2000);
+    }
+  </script>
+</body>
+</html> 
