@@ -558,19 +558,6 @@ function saveToLocalStorage() {
   }
 }
 
-// Helper function to load from localStorage
-function loadFromLocalStorage() {
-  try {
-    const storedTrips = localStorage.getItem('trips');
-    if (storedTrips) {
-      cachedTrips = JSON.parse(storedTrips);
-    }
-  } catch (error) {
-    console.error('Error loading from localStorage:', error);
-    cachedTrips = [];
-  }
-}
-
 // REAL IMPLEMENTATION TO COME:
 // 1. Replace with actual Google Sheets API integration
 // 2. Implement proper offline/online sync
