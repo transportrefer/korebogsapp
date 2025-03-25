@@ -34,9 +34,9 @@ For at sikre hurtig udvikling af en brugsbar app prioriteres features således:
 ## Implementationstrin
 
 ### 1. Basisopsætning
-- [ ] Opret GitHub repository
-- [ ] Opsæt basal HTML struktur med responsive design
-- [ ] Konfigurer GitHub Pages
+- [x] Opret GitHub repository
+- [x] Opsæt basal HTML struktur med responsive design
+- [x] Konfigurer GitHub Pages
 
 ### 2. Google API Opsætning
 - [ ] Opret projekt i Google Developer Console

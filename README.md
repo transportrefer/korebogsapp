@@ -76,12 +76,28 @@ For at bruge applikationen skal du oprette et projekt i Google Cloud Platform og
 2. Google Maps JavaScript API
 3. Google Sheets API
 
-Du skal herefter oprette OAuth credentials og indsætte dem i en .env fil:
+#### Trin-for-trin setup af Google API:
+
+1. Gå til [Google Cloud Console](https://console.cloud.google.com/)
+2. Opret et nyt projekt
+3. Aktiver de nødvendige APIs (OAuth, Maps, Sheets)
+4. Konfigurer OAuth consent screen
+   - Vælg "External" brugertype
+   - Udfyld de påkrævede felter (app navn, bruger support email)
+   - Tilføj `/auth/drive.file` og `/auth/spreadsheets` som scopes
+5. Opret OAuth credentials
+   - Vælg "Web application" som applikationstype
+   - Tilføj JavaScript origins: `https://yourusername.github.io` (eller din egen URL)
+   - Tilføj redirect URIs: `https://yourusername.github.io/drivers-book-app/callback.html`
+6. Kopiér Client ID og opret API nøgler
+7. Opret en `.env` fil i rod-mappen med følgende indhold:
 
 ```
 VITE_GOOGLE_CLIENT_ID=din-client-id
 VITE_GOOGLE_API_KEY=din-api-nøgle
 ```
+
+**Bemærk**: Efter deployment skal du opdatere de tilladte JavaScript origins og redirect URIs i Google Cloud Console til at pege på din faktiske GitHub Pages URL.
 
 ## Deployment
 

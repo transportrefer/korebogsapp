@@ -4,10 +4,10 @@
  */
 
 // Configuration for Google OAuth
-// These values will need to be updated with your Google Cloud Console values
+// These values will be loaded from environment variables
 const AUTH_CONFIG = {
-  clientId: 'YOUR_CLIENT_ID.apps.googleusercontent.com', // Replace with your client ID
-  apiKey: 'YOUR_API_KEY', // Replace with your API key
+  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || 'YOUR_CLIENT_ID.apps.googleusercontent.com', // Replace with your client ID from Google Cloud Console
+  apiKey: import.meta.env.VITE_GOOGLE_API_KEY || 'YOUR_API_KEY', // Replace with your API key from Google Cloud Console
   scopes: [
     'https://www.googleapis.com/auth/drive.file', // For Google Sheets
     'https://www.googleapis.com/auth/spreadsheets', // For Google Sheets
