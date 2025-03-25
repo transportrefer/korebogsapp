@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="da">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kørselsregnskab</title>
+    <meta name="description" content="App til registrering af erhvervskørsel for VSO-virksomhed" />
+    <!-- Open Sans font for clean, modern look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="/korebogsapp/assets/index-Bj0iB9Sj.js"></script>
+    <link rel="stylesheet" crossorigin href="/korebogsapp/assets/index-CfLxXbV4.css">
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <h1>Kørselsregnskab</h1>
+        <div id="user-info">
+          <button id="login-btn" style="display:none;">Log ind med Google</button>
+          <div id="user-profile" style="display:none;">
+            <img id="user-avatar" alt="Profilbillede">
+            <span id="user-name"></span>
+            <button id="logout-btn">Log ud</button>
+          </div>
+        </div>
+      </header>
+      
+      <main>
+        <section id="auth-section" style="display:flex;">
+          <div class="center-content">
+            <h2>Log ind for at bruge Kørselsregnskab</h2>
+            <button id="login-main-btn" class="btn-primary">Log ind med Google</button>
+          </div>
+        </section>
+        
+        <section id="app-section" style="display:none;">
+          <!-- Trip registration form -->
+          <div class="card">
+            <h2>Registrer kørsel</h2>
+            <form id="trip-form">
+              <div class="form-group">
+                <label for="date">Dato</label>
+                <input type="date" id="date" required>
+              </div>
+              
+              <div class="form-group">
+                <label for="start-address">Fra adresse</label>
+                <div class="address-input">
+                  <input type="text" id="start-address" required>
+                  <button type="button" id="use-current-location" class="btn-icon" title="Brug min nuværende position">📍</button>
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label for="end-address">Til adresse</label>
+                <input type="text" id="end-address" required>
+              </div>
+              
+              <div class="form-group">
+                <label for="purpose">Formål</label>
+                <input type="text" id="purpose" required>
+              </div>
+              
+              <div class="form-group checkbox">
+                <input type="checkbox" id="round-trip">
+                <label for="round-trip">Tur/retur</label>
+              </div>
+              
+              <div class="form-result" id="distance-result" style="display:none;">
+                <p>Beregnet distance: <span id="distance">0</span> km</p>
+                <p>Beløb: <span id="amount">0</span> kr.</p>
+              </div>
+              
+              <div class="form-actions">
+                <button type="button" id="calculate-btn" class="btn-secondary">Beregn</button>
+                <button type="submit" id="save-btn" class="btn-primary" disabled>Gem</button>
+              </div>
+            </form>
+          </div>
+          
+          <!-- Trip history -->
+          <div class="card">
+            <h2>Seneste kørsler</h2>
+            <div id="trips-list">
+              <p class="placeholder">Ingen kørsler registreret endnu.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+      
+      <footer class="app-footer">
+        <p>&copy; 2024 Kørselsregnskab</p>
+      </footer>
+    </div>
+  </body>
+</html> 
