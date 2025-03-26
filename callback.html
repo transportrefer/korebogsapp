@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Auth Callback</title>
+  <style>
+    body {
+      font-family: 'Open Sans', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+      background-color: #f9f9f9;
+    }
+    .spinner {
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border-left-color: #3498db;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .error {
+      color: #e74c3c;
+      margin: 20px 0;
+      padding: 10px;
+      border: 1px solid #e74c3c;
+      border-radius: 4px;
+      background-color: #fadbd8;
+      max-width: 80%;
+    }
+  </style>
+</head>
+<body>
+  <h2>Logger ind...</h2>
+  <div class="spinner"></div>
+  <p id="status-message">Behandler login...</p>
+  <div id="error-container" class="error" style="display: none;"></div>
+  
+  <script>
+    window.onload = function() {
+      const statusMessage = document.getElementById('status-message');
+      const errorContainer = document.getElementById('error-container');
+      
+      try {
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const state = urlParams.get('state');
+        const error = urlParams.get('error');
+        
+        // Check for errors in the callback
+        if (error) {
+          throw new Error(`Authentication error: ${error}`);
+        }
+        
+        // Validate the state parameter to prevent CSRF attacks
+        const savedState = localStorage.getItem('oauth_state');
+        if (state !== savedState) {
+          throw new Error('Invalid state parameter. Authentication failed.');
+        }
+        
+        // Clear the state from local storage
+        localStorage.removeItem('oauth_state');
+        
+        if (code) {
+          statusMessage.textContent = 'Login gennemført. Omdirigerer...';
+          
+          // Store the code temporarily - we'll exchange it for tokens in the main app
+          localStorage.setItem('auth_code', code);
+          
+          // Redirect back to the main application
+          setTimeout(() => {
+            window.location.href = '/korebogsapp/';
+          }, 1000);
+        } else {
+          throw new Error('No authorization code received from Google.');
+        }
+      } catch (error) {
+        // Handle errors
+        console.error('Authentication callback error:', error);
+        statusMessage.textContent = 'Der opstod en fejl under login.';
+        errorContainer.textContent = error.message;
+        errorContainer.style.display = 'block';
+        
+        // Add a retry button
+        const retryButton = document.createElement('button');
+        retryButton.textContent = 'Prøv igen';
+        retryButton.style.margin = '20px';
+        retryButton.style.padding = '10px 20px';
+        retryButton.style.cursor = 'pointer';
+        retryButton.onclick = () => window.location.href = '/';
+        document.body.appendChild(retryButton);
+      }
+    };
+  </script>
+</body>
+</html> 
