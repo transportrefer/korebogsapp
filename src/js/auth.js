@@ -282,6 +282,16 @@ function updateUIForUnauthenticatedUser() {
   window.dispatchEvent(new CustomEvent('userSignedOut'));
 }
 
+/**
+ * Check if the user is authenticated
+ * @returns {boolean} True if authenticated, false otherwise
+ */
+export async function checkAuthStatus() {
+  // In the new GIS model, we just return the current sign-in state
+  // The proper flow will be handled when initAuth is called
+  return isSignedIn;
+}
+
 // REAL IMPLEMENTATION TO COME:
 // 1. Replace with Google OAuth 2.0 flow
 // 2. Add token validation and refresh handling
