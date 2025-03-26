@@ -10,28 +10,44 @@ import { initUI } from './js/ui.js';
 async function initApp() {
   console.log('Initializing Kørselsregistrering app...');
   
-  // Initialize authentication first
-  initAuth()
-    .then(() => {
-      // Check if user is already authenticated
-      return checkAuthStatus();
-    })
-    .then(isAuthenticated => {
-      if (isAuthenticated) {
-        // User is authenticated, initialize the rest of the app
-        console.log('User is authenticated, initializing app modules');
-        initMaps();
-        initStorage();
-        initUI();
-      } else {
-        // User is not authenticated, show login page
-        console.log('User is not authenticated, showing login page');
-        // Login UI elements are already configured in auth.js
-      }
-    })
-    .catch(error => {
-      console.error('Error initializing application:', error);
+  try {
+    // Initialize authentication first
+    const auth = await initAuth();
+    console.log('Auth initialized, checking status');
+    
+    // Check if user is already authenticated
+    const isAuthenticated = await checkAuthStatus();
+    console.log('Auth status checked, user is authenticated:', isAuthenticated);
+    
+    // Set up authentication event listeners
+    window.addEventListener('userAuthenticated', (event) => {
+      console.log('Authentication event received, user authenticated:', event.detail);
+      // Initialize the rest of the app when user authenticates
+      initRestOfApp();
     });
+    
+    window.addEventListener('userSignedOut', () => {
+      console.log('User signed out event received');
+      // Hide app sections, can be handled by auth.js updateUIForUnauthenticatedUser
+    });
+    
+    // If already authenticated, initialize the app components
+    if (isAuthenticated) {
+      initRestOfApp();
+    }
+  } catch (error) {
+    console.error('Error initializing application:', error);
+  }
+}
+
+/**
+ * Initialize all non-auth app components
+ */
+function initRestOfApp() {
+  console.log('Initializing rest of app components');
+  initMaps();
+  initStorage();
+  initUI();
 }
 
 // Start the application
