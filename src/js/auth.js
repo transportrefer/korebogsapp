@@ -15,6 +15,14 @@ const AUTH_CONFIG = {
   ]
 };
 
+// LocalStorage keys for authentication
+const STORAGE_KEYS = {
+  ACCESS_TOKEN: 'auth_access_token',
+  REFRESH_TOKEN: 'auth_refresh_token',
+  TOKEN_EXPIRY: 'auth_token_expiry',
+  USER_DATA: 'auth_user_data'
+};
+
 // Log configuration for debugging
 console.log('Auth configuration:', {
   clientId: AUTH_CONFIG.clientId,
@@ -76,6 +84,18 @@ export async function initAuth() {
       await handleCallback(authCode);
     } catch (error) {
       console.error('Error handling callback:', error);
+    }
+  } else {
+    // Check if we have stored tokens and restore session
+    const authStatus = await checkAuthStatus();
+    console.log('Initial auth status check:', authStatus ? 'Authenticated' : 'Not authenticated');
+    
+    // If authenticated, make sure UI is updated correctly
+    if (authStatus && userData) {
+      updateUIForAuthenticatedUser();
+      
+      // Dispatch event that user is authenticated to ensure all components are notified
+      window.dispatchEvent(new CustomEvent('userAuthenticated', { detail: userData }));
     }
   }
   
@@ -140,12 +160,28 @@ function initializeGIS() {
       
       console.log('Token received successfully:', tokenResponse);
       
+      // Store tokens in localStorage for session persistence
+      if (tokenResponse.access_token) {
+        // Calculate expiry time
+        const expiryTime = Date.now() + (tokenResponse.expires_in * 1000);
+        
+        // Store tokens
+        localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokenResponse.access_token);
+        if (tokenResponse.refresh_token) {
+          localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokenResponse.refresh_token);
+        }
+        localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
+      }
+      
       // Get user profile info
       fetchUserProfile(tokenResponse.access_token)
         .then(userInfo => {
           console.log('User profile fetched:', userInfo);
           userData = userInfo;
           isSignedIn = true;
+          
+          // Store user data for session persistence
+          localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userInfo));
           
           // Make sure to update the UI
           updateUIForAuthenticatedUser();
@@ -239,12 +275,25 @@ async function exchangeCodeForToken(code) {
   // simulate a successful exchange.
   console.log('Simulating code exchange for token');
   
-  // Return a dummy token response
-  return {
-    access_token: 'simulated_access_token',
+  // Create a token response (in real implementation this would come from the server)
+  const tokenResponse = {
+    access_token: 'simulated_access_token_' + Date.now(), // Add timestamp to ensure uniqueness
+    refresh_token: 'simulated_refresh_token_' + Date.now(),
     expires_in: 3600,
     token_type: 'Bearer'
   };
+  
+  // Calculate expiry time
+  const expiryTime = Date.now() + (tokenResponse.expires_in * 1000);
+  
+  // Store tokens in localStorage
+  localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokenResponse.access_token);
+  localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokenResponse.refresh_token);
+  localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
+  
+  console.log('Tokens stored in localStorage with expiry:', new Date(expiryTime).toISOString());
+  
+  return tokenResponse;
 }
 
 /**
@@ -253,20 +302,67 @@ async function exchangeCodeForToken(code) {
 async function handleLogout() {
   console.log('Logout clicked');
   
-  if (google?.accounts?.oauth2) {
-    // Revoke the token
-    google.accounts.oauth2.revoke(google.accounts.oauth2.getAccessToken()?.access_token || '', () => {
-      console.log('Token revoked');
-      isSignedIn = false;
-      userData = null;
-      updateUIForUnauthenticatedUser();
-    });
-  } else {
-    // Fallback if google identity services aren't available
-    isSignedIn = false;
-    userData = null;
-    updateUIForUnauthenticatedUser();
+  // Store user email before clearing data
+  const userEmail = userData?.email;
+  const accessToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+  
+  // First update UI state for immediate feedback
+  isSignedIn = false;
+  userData = null;
+  updateUIForUnauthenticatedUser();
+  
+  // Revoke tokens with Google if possible
+  let revocationSuccess = false;
+  
+  if (google && google.accounts) {
+    try {
+      // For ID tokens, use google.accounts.id.revoke
+      if (userEmail && google.accounts.id) {
+        console.log('Revoking ID token for:', userEmail);
+        await new Promise((resolve) => {
+          google.accounts.id.revoke(userEmail, (response) => {
+            console.log('ID token revocation response:', response);
+            revocationSuccess = response.successful;
+            resolve();
+          });
+        });
+      }
+      
+      // For access tokens, we'd ideally use a request to the revocation endpoint
+      // In a real implementation with actual access tokens, you could do:
+      if (accessToken && !revocationSuccess) {
+        console.log('Attempting to revoke access token');
+        try {
+          const revokeEndpoint = 'https://oauth2.googleapis.com/revoke';
+          const response = await fetch(`${revokeEndpoint}?token=${accessToken}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          });
+          
+          if (response.ok) {
+            console.log('Access token successfully revoked');
+            revocationSuccess = true;
+          } else {
+            console.warn('Failed to revoke access token:', response.status);
+          }
+        } catch (error) {
+          console.error('Error revoking access token:', error);
+        }
+      }
+    } catch (error) {
+      console.error('Error during logout process:', error);
+    }
   }
+  
+  // Always clear local storage regardless of revocation success
+  clearAuthData();
+  
+  // Dispatch signout event to notify other components
+  window.dispatchEvent(new CustomEvent('userSignedOut'));
+  
+  console.log('Logout complete, revocation ' + (revocationSuccess ? 'successful' : 'may not have completed'));
 }
 
 /**
@@ -278,6 +374,11 @@ function updateUIForAuthenticatedUser() {
   console.log('userProfile:', userProfile);
   console.log('authSection:', authSection);
   console.log('appSection:', appSection);
+  
+  // Store user data in localStorage for persistence
+  if (userData) {
+    localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
+  }
   
   // Update menu display
   if (loginBtn) loginBtn.style.display = 'none';
@@ -303,13 +404,19 @@ function updateUIForAuthenticatedUser() {
  * Update UI for unauthenticated user
  */
 function updateUIForUnauthenticatedUser() {
+  console.log('Updating UI for unauthenticated user');
+  
   // Update menu display
-  loginBtn.style.display = 'block';
-  userProfile.style.display = 'none';
+  if (loginBtn) loginBtn.style.display = 'block';
+  if (userProfile) userProfile.style.display = 'none';
   
   // Show auth section, hide app
-  authSection.style.display = 'flex';
-  appSection.style.display = 'none';
+  if (authSection) authSection.style.display = 'flex';
+  if (appSection) appSection.style.display = 'none';
+  
+  // Reset user avatar and name if they exist
+  if (userAvatar) userAvatar.src = '';
+  if (userName) userName.textContent = '';
   
   // Dispatch event that user is not authenticated
   window.dispatchEvent(new CustomEvent('userSignedOut'));
@@ -320,9 +427,95 @@ function updateUIForUnauthenticatedUser() {
  * @returns {boolean} True if authenticated, false otherwise
  */
 export async function checkAuthStatus() {
-  // In the new GIS model, we just return the current sign-in state
-  // The proper flow will be handled when initAuth is called
-  return isSignedIn;
+  // If we're already signed in, return true
+  if (isSignedIn && userData) {
+    return true;
+  }
+  
+  // Check for tokens in localStorage
+  const storedToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+  const storedRefreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+  const storedExpiry = localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY);
+  const storedUserData = localStorage.getItem(STORAGE_KEYS.USER_DATA);
+  
+  // If no token or userData, not authenticated
+  if (!storedToken || !storedUserData) {
+    console.log('No stored tokens or user data found');
+    return false;
+  }
+  
+  // Parse the stored user data
+  try {
+    userData = JSON.parse(storedUserData);
+  } catch (error) {
+    console.error('Error parsing stored user data:', error);
+    clearAuthData();
+    return false;
+  }
+  
+  // Check if token has expired
+  if (storedExpiry && parseInt(storedExpiry, 10) < Date.now()) {
+    console.log('Token has expired, attempting refresh...');
+    
+    // In a real implementation, we would use the refresh token to get a new access token
+    // For now, since we're using a simulation, we'll just simulate a token refresh
+    if (storedRefreshToken) {
+      try {
+        // Simulate token refresh
+        const newTokenResponse = {
+          access_token: 'refreshed_access_token_' + Date.now(),
+          expires_in: 3600
+        };
+        
+        // Calculate new expiry time
+        const newExpiryTime = Date.now() + (newTokenResponse.expires_in * 1000);
+        
+        // Store new token and expiry
+        localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newTokenResponse.access_token);
+        localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, newExpiryTime.toString());
+        
+        console.log('Token refreshed successfully');
+        
+        // Update auth state
+        isSignedIn = true;
+        return true;
+      } catch (error) {
+        console.error('Error refreshing token:', error);
+        clearAuthData();
+        return false;
+      }
+    } else {
+      console.log('No refresh token available');
+      clearAuthData();
+      return false;
+    }
+  }
+  
+  // Token is valid, restore session state
+  console.log('Valid token found, restoring session');
+  isSignedIn = true;
+  
+  // Update UI if needed (may be called before UI elements exist)
+  if (userProfile && loginBtn) {
+    updateUIForAuthenticatedUser();
+  }
+  
+  return true;
+}
+
+/**
+ * Clear all authentication data
+ */
+function clearAuthData() {
+  // Clear auth state
+  isSignedIn = false;
+  userData = null;
+  
+  // Clear localStorage
+  localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+  localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+  localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
+  localStorage.removeItem(STORAGE_KEYS.USER_DATA);
 }
 
 // REAL IMPLEMENTATION TO COME:
