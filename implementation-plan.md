@@ -56,16 +56,15 @@ For at sikre hurtig udvikling af en brugsbar app prioriteres features således:
 - [ ] Fikser logout funktionalitet, som ikke fungerer korrekt
   - Sikre at tokens revokeres korrekt ved logout
   - Opdater UI korrekt efter logout
-- [ ] Håndter Google Maps fejl efter login
-  - Løs "autocompleteAddress is not defined" fejl
-  - Fikser "getSettings is not defined" fejl
-  - Håndter "Cannot read properties of undefined (reading 'JH')" fejl
-- [ ] Undgå dobbelt indlæsning af Google Maps API
-  - Implementer lazy loading af Maps API
-  - Tilføj loading=async parameter til script tags
 
 ### 4. Lokationsbaserede Funktioner 🔄
 - [ ] Implementer Google Maps integration
+  - [ ] Løs fejl ved indlæsning af Google Maps API
+  - [ ] Undgå dobbelt indlæsning af Google Maps API
+  - [ ] Tilføj loading=async parameter til script tags
+  - [ ] Fejlhåndtering for "autocompleteAddress is not defined"
+  - [ ] Fejlhåndtering for "getSettings is not defined"
+  - [ ] Håndter "Cannot read properties of undefined (reading 'JH')" fejl
 - [ ] Tilføj "Find min position" funktion
 - [ ] Implementer adressesøgning
 - [ ] Implementer afstandsberegning mellem to punkter
@@ -151,7 +150,9 @@ For at sikre hurtig udvikling af en brugsbar app prioriteres features således:
 2. Sikre korrekt kald til 'updateUIForUnauthenticatedUser' efter vellykket logout
 3. Ryd også tokens fra localStorage/cookies ved logout
 
-### Google Maps API Fejl
+## Diagnose af Google Maps API fejl
+
+### Google Maps indlæsnings- og initialiseringsproblemer
 **Diagnose:** Efter login vises fejlmeddelelser relateret til Google Maps API og manglende funktioner.
 
 **Årsag:** 
@@ -165,4 +166,4 @@ For at sikre hurtig udvikling af en brugsbar app prioriteres features således:
 3. Tilføj 'loading=async' parameter til Google Maps script tag
 4. Implementer en mere robust initialiseringssekvens for Maps API
 
-Disse fejl bør prioriteres for at sikre en stabil brugeroplevelse med login/logout og for at undgå problemer med Google Maps integration.
+Disse fejl bør prioriteres for at sikre en stabil brugeroplevelse og for at undgå problemer med Google Maps integration.
