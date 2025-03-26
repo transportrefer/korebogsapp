@@ -40,84 +40,87 @@ korebogsapp/
 - Offline-understøttelse med synkronisering ved genetableret forbindelse
 - Redigering og sletning af kørselsregistreringer
 
-## Udvikling
+## Setup for Development
 
-### Forudsætninger
+### Prerequisites
 
-- Node.js (version 14.x eller nyere)
-- npm eller yarn
-- Google Developer account til API-nøgler
+- Node.js (v14 or newer)
+- npm or yarn
+- Google Cloud Platform account with Maps JavaScript API and OAuth 2.0 credentials
 
-### Opsætning
+### Installation
 
-1. Klon repositoriet:
+1. Clone the repository:
    ```bash
    git clone https://github.com/transportrefer/korebogsapp.git
    cd korebogsapp
    ```
 
-2. Installer afhængigheder:
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-3. Start udviklingsserveren:
+3. Configure environment variables:
+   - Create a `.env` file in the root directory
+   - Add your Google API keys (never commit this file to git):
+   ```
+   VITE_GOOGLE_CLIENT_ID=your-client-id-here
+   VITE_GOOGLE_API_KEY=your-api-key-here
+   ```
+
+4. Start the development server:
    ```bash
    npm run dev
    ```
 
-4. Åbn browseren på `http://localhost:5173`
+## Google API Setup (Important Security Information)
 
-### Konfiguration af Google API
+### Google Maps API Key
 
-For at bruge applikationen skal du oprette et projekt i Google Cloud Platform og aktivere følgende APIs:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or use an existing one
+3. Enable the Google Maps JavaScript API and Places API
+4. Create an API key
+5. **Important**: Apply restrictions to your API key:
+   - Under "Application restrictions", select "Website restrictions"
+   - Add your domain (e.g., `https://yourdomain.com/*` or `http://localhost:*` for development)
+   - Under "API restrictions", restrict the key to only the APIs you need:
+     - Maps JavaScript API
+     - Places API
+     - Distance Matrix API
+     - Geocoding API
 
-1. Google OAuth 2.0
-2. Google Maps JavaScript API
-3. Google Sheets API
+### Google OAuth Client ID
 
-#### Trin-for-trin setup af Google API:
-
-1. Gå til [Google Cloud Console](https://console.cloud.google.com/)
-2. Opret et nyt projekt
-3. Aktiver de nødvendige APIs (OAuth, Maps, Sheets)
-4. Konfigurer OAuth consent screen
-   - Vælg "External" brugertype
-   - Udfyld de påkrævede felter (app navn, bruger support email)
-   - Tilføj `/auth/drive.file` og `/auth/spreadsheets` som scopes
-5. Opret OAuth credentials
-   - Vælg "Web application" som applikationstype
-   - Tilføj JavaScript origins: `https://yourusername.github.io` (eller din egen URL)
-   - Tilføj redirect URIs: `https://yourusername.github.io/drivers-book-app/callback.html`
-6. Kopiér Client ID og opret API nøgler
-7. Opret en `.env` fil i rod-mappen med følgende indhold:
-
-```
-VITE_GOOGLE_CLIENT_ID=din-client-id
-VITE_GOOGLE_API_KEY=din-api-nøgle
-```
-
-**Bemærk**: Efter deployment skal du opdatere de tilladte JavaScript origins og redirect URIs i Google Cloud Console til at pege på din faktiske GitHub Pages URL.
+1. In the Google Cloud Console, navigate to "APIs & Services" > "Credentials"
+2. Create an OAuth 2.0 Client ID
+3. Configure the OAuth consent screen
+4. Add authorized JavaScript origins:
+   - `https://yourdomain.com` (production)
+   - `http://localhost:5173` (development)
+5. Add authorized redirect URIs:
+   - `https://yourdomain.com/callback.html` (production)
+   - `http://localhost:5173/callback.html` (development)
 
 ## Deployment
 
-Projektet er konfigureret til deployment på GitHub Pages:
+### GitHub Pages
 
-```bash
-# Byg projektet
-npm run build
+1. Update the `.env.production` file with your production API keys (these will be included in the build)
+2. Make sure your API keys have proper restrictions to prevent unauthorized usage
+3. Run the deployment script:
+   ```bash
+   npm run deploy
+   ```
 
-# Deploy til GitHub Pages
-npm run deploy
-```
+### Security Best Practices
 
-## API Integration
-
-Applikationen integrerer med følgende Google APIs:
-
-1. **Google OAuth**: Til brugerautentificering
-2. **Google Maps API**: Til afstandsberegning og adressesøgning
-3. **Google Sheets API**: Til synkronisering af kørselsdata
+- **Never** commit API keys to your repository
+- Always use environment variables for sensitive information
+- Apply appropriate restrictions to your API keys
+- For production, use a CI/CD pipeline with secrets management
+- Regularly review your Google Cloud Console for any unusual activity
 
 ## Licens
 

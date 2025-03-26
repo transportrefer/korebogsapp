@@ -5,7 +5,7 @@
 
 // Configuration for Google Maps
 const MAPS_CONFIG = {
-  apiKey: import.meta.env.VITE_GOOGLE_API_KEY || '',
+  apiKey: import.meta.env.VITE_GOOGLE_API_KEY,
 };
 
 let googleMapsLoaded = false;
@@ -21,6 +21,12 @@ let geocoder = null;
 export async function initMaps() {
   console.log('Initializing maps module');
   
+  // Check if API key is available
+  if (!MAPS_CONFIG.apiKey) {
+    console.warn('Google Maps API key is missing. Using fallback functionality.');
+    return provideMockFunctions(true);
+  }
+  
   try {
     await loadGoogleMapsAPI();
     console.log('Google Maps API loaded successfully');
@@ -32,23 +38,77 @@ export async function initMaps() {
       autocompleteService = new google.maps.places.AutocompleteService();
       
       googleMapsLoaded = true;
+      
+      // Set up autocompletion for form fields
+      setupAddressAutocompletion();
+      
+      return {
+        calculateDistance,
+        getUserLocation,
+        autocompleteAddress,
+        isLoaded: () => googleMapsLoaded
+      };
+    } else {
+      throw new Error('Google Maps API loaded but services are not available');
     }
-    
-    return {
-      calculateDistance,
-      getUserLocation,
-      autocompleteAddress,
-      isLoaded: () => googleMapsLoaded
-    };
   } catch (error) {
     console.error('Error initializing Google Maps:', error);
-    return {
-      calculateDistance: mockCalculateDistance,
-      getUserLocation: mockGetUserLocation,
-      autocompleteAddress: mockAutocompleteAddress,
-      isLoaded: () => false
-    };
+    return provideMockFunctions();
   }
+}
+
+/**
+ * Set up autocompletion for address fields in the form
+ */
+function setupAddressAutocompletion() {
+  const startAddressInput = document.getElementById('start-address');
+  const endAddressInput = document.getElementById('end-address');
+  
+  if (startAddressInput) {
+    autocompleteAddress(startAddressInput);
+  }
+  
+  if (endAddressInput) {
+    autocompleteAddress(endAddressInput);
+  }
+}
+
+/**
+ * Provide mock functions when Maps API is not available
+ * @param {boolean} showWarning - Whether to display a warning message
+ * @returns {Object} Object with mock functions
+ */
+function provideMockFunctions(showWarning = false) {
+  if (showWarning) {
+    // Add a warning notification in the UI
+    setTimeout(() => {
+      const mapWarning = document.createElement('div');
+      mapWarning.className = 'warning-notification';
+      mapWarning.style.backgroundColor = '#fcf8e3';
+      mapWarning.style.padding = '10px';
+      mapWarning.style.borderRadius = '4px';
+      mapWarning.style.marginBottom = '15px';
+      mapWarning.style.color = '#8a6d3b';
+      mapWarning.style.borderLeft = '4px solid #f0ad4e';
+      mapWarning.innerHTML = `
+        <p><strong>Note:</strong> Google Maps is running in limited mode.</p>
+        <p>Distance calculations and address autocompletion will use estimates.</p>
+      `;
+      
+      // Add it to the form
+      const tripForm = document.getElementById('trip-form');
+      if (tripForm) {
+        tripForm.prepend(mapWarning);
+      }
+    }, 1000);
+  }
+  
+  return {
+    calculateDistance: mockCalculateDistance,
+    getUserLocation: mockGetUserLocation,
+    autocompleteAddress: mockAutocompleteAddress,
+    isLoaded: () => false
+  };
 }
 
 /**

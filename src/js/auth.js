@@ -5,17 +5,17 @@
 
 // Configuration for Google OAuth
 const AUTH_CONFIG = {
-  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '129709058864-dmk39lre4jrop8ch05t1taeggmchhoqs.apps.googleusercontent.com',
-  apiKey: import.meta.env.VITE_GOOGLE_API_KEY || 'AIzaSyApeC-_5XObrNatcG_yxUna853dpkyHmlM',
+  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+  apiKey: import.meta.env.VITE_GOOGLE_API_KEY,
   scopes: [
     'https://www.googleapis.com/auth/drive.file', // For Google Sheets
     'https://www.googleapis.com/auth/spreadsheets', // For Google Sheets
   ]
 };
 
-// Log configuration for debugging
+// Log configuration for debugging (without logging sensitive values)
 console.log('Auth configuration:', {
-  clientId: AUTH_CONFIG.clientId,
+  hasClientId: !!AUTH_CONFIG.clientId,
   hasApiKey: !!AUTH_CONFIG.apiKey,
   origin: window.location.origin,
   pathname: window.location.pathname
@@ -42,6 +42,18 @@ let userName;
 export async function initAuth() {
   console.log('Initializing auth module');
   
+  // Check if API credentials are available
+  if (!AUTH_CONFIG.clientId) {
+    console.error('Google Client ID is missing. Authentication will not work.');
+    showCredentialsError('Google Client ID is missing');
+    return {
+      isAuthenticated: () => false,
+      getCurrentUser: () => null,
+      login: () => alert('Authentication is not configured properly.'),
+      logout: () => {}
+    };
+  }
+  
   // Initialize DOM elements
   loginBtn = document.getElementById('login-btn');
   loginMainBtn = document.getElementById('login-main-btn');
@@ -58,7 +70,18 @@ export async function initAuth() {
   logoutBtn.addEventListener('click', handleLogout);
   
   // Load the Google Identity Services
-  await loadGoogleIdentityServices();
+  try {
+    await loadGoogleIdentityServices();
+  } catch (error) {
+    console.error('Failed to load Google Identity Services:', error);
+    showCredentialsError('Failed to load Google authentication services');
+    return {
+      isAuthenticated: () => false,
+      getCurrentUser: () => null,
+      login: () => alert('Authentication service failed to load.'),
+      logout: () => {}
+    };
+  }
   
   // Check if there's an auth code from the callback
   const authCode = localStorage.getItem('auth_code');
@@ -290,6 +313,36 @@ export async function checkAuthStatus() {
   // In the new GIS model, we just return the current sign-in state
   // The proper flow will be handled when initAuth is called
   return isSignedIn;
+}
+
+/**
+ * Display a user-friendly error when credentials are missing
+ */
+function showCredentialsError(message) {
+  if (authSection) {
+    // Create an error message element
+    const errorEl = document.createElement('div');
+    errorEl.style.color = '#e74c3c';
+    errorEl.style.backgroundColor = '#fadbd8';
+    errorEl.style.padding = '15px';
+    errorEl.style.borderRadius = '4px';
+    errorEl.style.margin = '20px 0';
+    errorEl.style.textAlign = 'center';
+    errorEl.innerHTML = `
+      <p><strong>Authentication Error</strong></p>
+      <p>${message}</p>
+      <p>Please check the application configuration.</p>
+    `;
+    
+    // Find a container to display the error
+    const container = authSection.querySelector('.center-content') || authSection;
+    container.appendChild(errorEl);
+    
+    // Hide the login button since it won't work
+    if (loginMainBtn) {
+      loginMainBtn.style.display = 'none';
+    }
+  }
 }
 
 // REAL IMPLEMENTATION TO COME:
