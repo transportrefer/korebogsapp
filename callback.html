@@ -53,11 +53,19 @@
       const errorContainer = document.getElementById('error-container');
       
       try {
+        console.log('Callback page loaded, processing authentication response');
         // Parse URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
         const state = urlParams.get('state');
         const error = urlParams.get('error');
+        
+        console.log('URL parameters:', {
+          hasCode: !!code,
+          hasState: !!state,
+          error: error,
+          fullUrl: window.location.href
+        });
         
         // Check for errors in the callback
         if (error) {
@@ -66,6 +74,8 @@
         
         // Validate the state parameter to prevent CSRF attacks
         const savedState = localStorage.getItem('oauth_state');
+        console.log('Validating state:', { receivedState: state, savedState: savedState });
+        
         if (state !== savedState) {
           throw new Error('Invalid state parameter. Authentication failed.');
         }
@@ -75,13 +85,18 @@
         
         if (code) {
           statusMessage.textContent = 'Login gennemført. Omdirigerer...';
+          console.log('Auth code received successfully, storing in localStorage');
           
           // Store the code temporarily - we'll exchange it for tokens in the main app
           localStorage.setItem('auth_code', code);
           
+          // Construct the redirect URL based on the current location
+          const redirectBase = window.location.pathname.includes('/korebogsapp/') ? '/korebogsapp/' : '/';
+          console.log('Redirecting to:', redirectBase);
+          
           // Redirect back to the main application
           setTimeout(() => {
-            window.location.href = '/';
+            window.location.href = redirectBase;
           }, 1000);
         } else {
           throw new Error('No authorization code received from Google.');
@@ -93,13 +108,26 @@
         errorContainer.textContent = error.message;
         errorContainer.style.display = 'block';
         
+        // Add detailed error info
+        const errorDetails = document.createElement('div');
+        errorDetails.style.marginTop = '20px';
+        errorDetails.style.fontSize = '12px';
+        errorDetails.style.fontFamily = 'monospace';
+        errorDetails.innerHTML = `
+          <p>Technical details:</p>
+          <pre>${error.stack || 'No stack trace available'}</pre>
+          <p>Current URL: ${window.location.href}</p>
+          <p>Origin: ${window.location.origin}</p>
+        `;
+        errorContainer.appendChild(errorDetails);
+        
         // Add a retry button
         const retryButton = document.createElement('button');
         retryButton.textContent = 'Prøv igen';
         retryButton.style.margin = '20px';
         retryButton.style.padding = '10px 20px';
         retryButton.style.cursor = 'pointer';
-        retryButton.onclick = () => window.location.href = '/';
+        retryButton.onclick = () => window.location.href = redirectBase || '/korebogsapp/';
         document.body.appendChild(retryButton);
       }
     };

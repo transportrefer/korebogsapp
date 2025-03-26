@@ -5,8 +5,8 @@
 
 // Configuration for Google OAuth
 const AUTH_CONFIG = {
-  clientId: '129709058864-dmk39lre4jrop8ch05t1taeggmchhoqs.apps.googleusercontent.com',
-  apiKey: import.meta.env.VITE_GOOGLE_API_KEY || '', // Will need to be set in your .env file
+  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '129709058864-dmk39lre4jrop8ch05t1taeggmchhoqs.apps.googleusercontent.com',
+  apiKey: import.meta.env.VITE_GOOGLE_API_KEY || 'AIzaSyApeC-_5XObrNatcG_yxUna853dpkyHmlM',
   scopes: [
     'https://www.googleapis.com/auth/drive.file', // For Google Sheets
     'https://www.googleapis.com/auth/spreadsheets', // For Google Sheets
@@ -15,6 +15,14 @@ const AUTH_CONFIG = {
     'https://sheets.googleapis.com/$discovery/rest?version=v4',
   ]
 };
+
+// Log configuration for debugging
+console.log('Auth configuration:', {
+  clientId: AUTH_CONFIG.clientId,
+  hasApiKey: !!AUTH_CONFIG.apiKey,
+  origin: window.location.origin,
+  pathname: window.location.pathname
+});
 
 // Auth state
 let googleAuth = null;
@@ -71,12 +79,42 @@ export async function initAuth() {
  */
 function loadGoogleAPIClient() {
   return new Promise((resolve, reject) => {
+    console.log('Loading Google API client');
+    // Check if gapi is already loaded
+    if (window.gapi) {
+      console.log('Google API client already loaded');
+      gapi.load('client:auth2', (error) => {
+        if (error) {
+          console.error('Error loading gapi client:auth2:', error);
+          reject(error);
+        } else {
+          console.log('gapi client:auth2 loaded successfully');
+          resolve();
+        }
+      });
+      return;
+    }
+    
     const script = document.createElement('script');
     script.src = 'https://apis.google.com/js/api.js';
+    script.async = true;
+    script.defer = true;
     script.onload = () => {
-      gapi.load('client:auth2', resolve);
+      console.log('Google API script loaded');
+      gapi.load('client:auth2', (error) => {
+        if (error) {
+          console.error('Error loading gapi client:auth2:', error);
+          reject(error);
+        } else {
+          console.log('gapi client:auth2 loaded successfully');
+          resolve();
+        }
+      });
     };
-    script.onerror = reject;
+    script.onerror = (error) => {
+      console.error('Error loading Google API script:', error);
+      reject(error);
+    };
     document.body.appendChild(script);
   });
 }
@@ -159,6 +197,7 @@ async function handleLogin() {
   
   if (!googleAuth) {
     try {
+      console.log('Initializing Google Auth for login');
       await initGoogleAuth();
     } catch (error) {
       console.error('Error initializing Google Auth for login:', error);
@@ -181,10 +220,14 @@ async function handleLogin() {
       // if the user is already signed in
       if (!googleAuth.isSignedIn.get()) {
         // If not signed in, start the OAuth flow again
+        console.log('User not signed in, starting OAuth flow again');
         await startOAuthFlow();
+      } else {
+        console.log('User already signed in');
       }
     } else {
       // Start the OAuth flow
+      console.log('Starting OAuth flow');
       await startOAuthFlow();
     }
   } catch (error) {
@@ -198,11 +241,32 @@ async function handleLogin() {
 async function startOAuthFlow() {
   // Generate a random state value to prevent CSRF attacks
   const state = Math.random().toString(36).substring(2, 15);
+  console.log('Generated state for OAuth flow:', state);
   localStorage.setItem('oauth_state', state);
   
   // Get auth URL from Google
   try {
-    await googleAuth.signIn();
+    console.log('Starting Google sign-in flow');
+    const isGitHubPages = window.location.hostname.includes('github.io');
+    
+    if (isGitHubPages) {
+      console.log('Detected GitHub Pages environment, using specific redirect URI');
+      // For GitHub Pages, we need to explicitly set the redirect URI that matches what's configured in Google Cloud Console
+      const redirectUri = 'https://transportrefer.github.io/korebogsapp/callback.html';
+      
+      // Initialize auth options with the redirect URI
+      const options = {
+        redirect_uri: redirectUri
+      };
+      
+      // Sign in with redirect URI explicitly specified
+      await googleAuth.signIn(options);
+    } else {
+      // For local development or other environments, use default signIn
+      await googleAuth.signIn();
+    }
+    
+    console.log('Sign-in flow completed');
   } catch (error) {
     console.error('Error starting OAuth flow:', error);
     throw error;
