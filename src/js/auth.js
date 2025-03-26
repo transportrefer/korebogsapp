@@ -10,6 +10,8 @@ const AUTH_CONFIG = {
   scopes: [
     'https://www.googleapis.com/auth/drive.file', // For Google Sheets
     'https://www.googleapis.com/auth/spreadsheets', // For Google Sheets
+    'https://www.googleapis.com/auth/userinfo.profile', // For user profile info
+    'https://www.googleapis.com/auth/userinfo.email' // For user email
   ]
 };
 
@@ -128,6 +130,8 @@ function initializeGIS() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: AUTH_CONFIG.clientId,
     scope: AUTH_CONFIG.scopes.join(' '),
+    prompt: 'consent',
+    ux_mode: 'popup',
     callback: (tokenResponse) => {
       if (tokenResponse.error !== undefined) {
         console.error('Token error:', tokenResponse);
@@ -161,17 +165,29 @@ function initializeGIS() {
  * Fetch user profile information using the access token
  */
 async function fetchUserProfile(accessToken) {
-  const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`
+  console.log('Fetching user profile with access token:', accessToken.substring(0, 10) + '...');
+  
+  try {
+    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to fetch user profile:', response.status, response.statusText);
+      const errorText = await response.text();
+      console.error('Error details:', errorText);
+      throw new Error(`Failed to fetch user profile: ${response.status}`);
     }
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to fetch user profile: ${response.status}`);
+    
+    const userData = await response.json();
+    console.log('User profile data received:', userData);
+    return userData;
+  } catch (error) {
+    console.error('Exception when fetching user profile:', error);
+    throw error;
   }
-  
-  return await response.json();
 }
 
 /**
