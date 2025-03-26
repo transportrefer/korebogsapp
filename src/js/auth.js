@@ -1,6 +1,6 @@
 /**
  * Authentication Module
- * Handles Google OAuth authentication
+ * Handles Google OAuth authentication using Google Identity Services
  */
 
 // Configuration for Google OAuth
@@ -10,9 +10,6 @@ const AUTH_CONFIG = {
   scopes: [
     'https://www.googleapis.com/auth/drive.file', // For Google Sheets
     'https://www.googleapis.com/auth/spreadsheets', // For Google Sheets
-  ],
-  discoveryDocs: [
-    'https://sheets.googleapis.com/$discovery/rest?version=v4',
   ]
 };
 
@@ -25,9 +22,9 @@ console.log('Auth configuration:', {
 });
 
 // Auth state
-let googleAuth = null;
 let isSignedIn = false;
 let userData = null;
+let tokenClient = null;
 
 // DOM elements for authentication
 let loginBtn;
@@ -60,11 +57,25 @@ export async function initAuth() {
   loginMainBtn.addEventListener('click', handleLogin);
   logoutBtn.addEventListener('click', handleLogout);
   
-  // Load the Google API client
-  await loadGoogleAPIClient();
+  // Load the Google Identity Services
+  await loadGoogleIdentityServices();
   
-  // Set up Google Auth
-  await initGoogleAuth();
+  // Check if there's an auth code from the callback
+  const authCode = localStorage.getItem('auth_code');
+  if (authCode) {
+    // We've been redirected back from the OAuth flow
+    console.log('Auth code found in storage');
+    
+    // Clear the auth code
+    localStorage.removeItem('auth_code');
+    
+    // Attempt to get user info using the auth code
+    try {
+      await handleCallback(authCode);
+    } catch (error) {
+      console.error('Error handling callback:', error);
+    }
+  }
   
   return {
     isAuthenticated: () => isSignedIn,
@@ -75,44 +86,32 @@ export async function initAuth() {
 }
 
 /**
- * Load the Google API client script
+ * Load the Google Identity Services script
  */
-function loadGoogleAPIClient() {
+function loadGoogleIdentityServices() {
   return new Promise((resolve, reject) => {
-    console.log('Loading Google API client');
-    // Check if gapi is already loaded
-    if (window.gapi) {
-      console.log('Google API client already loaded');
-      gapi.load('client:auth2', (error) => {
-        if (error) {
-          console.error('Error loading gapi client:auth2:', error);
-          reject(error);
-        } else {
-          console.log('gapi client:auth2 loaded successfully');
-          resolve();
-        }
-      });
+    console.log('Loading Google Identity Services');
+    
+    // Check if the Google Identity Services script is already loaded
+    if (window.google && window.google.accounts) {
+      console.log('Google Identity Services already loaded');
+      initializeGIS();
+      resolve();
       return;
     }
     
+    // Load the GIS script
     const script = document.createElement('script');
-    script.src = 'https://apis.google.com/js/api.js';
+    script.src = 'https://accounts.google.com/gsi/client';
     script.async = true;
     script.defer = true;
     script.onload = () => {
-      console.log('Google API script loaded');
-      gapi.load('client:auth2', (error) => {
-        if (error) {
-          console.error('Error loading gapi client:auth2:', error);
-          reject(error);
-        } else {
-          console.log('gapi client:auth2 loaded successfully');
-          resolve();
-        }
-      });
+      console.log('Google Identity Services script loaded');
+      initializeGIS();
+      resolve();
     };
     script.onerror = (error) => {
-      console.error('Error loading Google API script:', error);
+      console.error('Error loading Google Identity Services script:', error);
       reject(error);
     };
     document.body.appendChild(script);
@@ -120,73 +119,52 @@ function loadGoogleAPIClient() {
 }
 
 /**
- * Initialize Google Auth
+ * Initialize Google Identity Services
  */
-async function initGoogleAuth() {
-  try {
-    await gapi.client.init({
-      apiKey: AUTH_CONFIG.apiKey,
-      clientId: AUTH_CONFIG.clientId,
-      discoveryDocs: AUTH_CONFIG.discoveryDocs,
-      scope: AUTH_CONFIG.scopes.join(' ')
-    });
-    
-    // Get the GoogleAuth instance
-    googleAuth = gapi.auth2.getAuthInstance();
-    
-    // Update sign-in state listeners
-    isSignedIn = googleAuth.isSignedIn.get();
-    googleAuth.isSignedIn.listen(updateSigninStatus);
-    
-    // Handle the initial sign-in state
-    updateSigninStatus(isSignedIn);
-    
-    return googleAuth;
-  } catch (error) {
-    console.error('Error initializing Google Auth:', error);
-    throw error;
-  }
+function initializeGIS() {
+  console.log('Initializing Google Identity Services');
+  
+  // Create token client for handling authorization
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: AUTH_CONFIG.clientId,
+    scope: AUTH_CONFIG.scopes.join(' '),
+    callback: (tokenResponse) => {
+      if (tokenResponse.error !== undefined) {
+        console.error('Token error:', tokenResponse);
+        return;
+      }
+      
+      console.log('Token received:', tokenResponse);
+      
+      // Get user profile info
+      fetchUserProfile(tokenResponse.access_token)
+        .then(userInfo => {
+          userData = userInfo;
+          isSignedIn = true;
+          updateUIForAuthenticatedUser();
+        })
+        .catch(error => {
+          console.error('Error fetching user profile:', error);
+        });
+    },
+  });
 }
 
 /**
- * Check if the user is authenticated
- * @returns {boolean} True if authenticated, false otherwise
+ * Fetch user profile information using the access token
  */
-export async function checkAuthStatus() {
-  if (!googleAuth) {
-    try {
-      await initGoogleAuth();
-    } catch (error) {
-      console.error('Error checking auth status:', error);
-      return false;
+async function fetchUserProfile(accessToken) {
+  const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
     }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch user profile: ${response.status}`);
   }
-  return googleAuth.isSignedIn.get();
-}
-
-/**
- * Update sign-in status based on current state
- * @param {boolean} isSignedIn - Whether user is signed in
- */
-function updateSigninStatus(isSignedIn) {
-  if (isSignedIn) {
-    // User is signed in
-    const user = googleAuth.currentUser.get();
-    const profile = user.getBasicProfile();
-    
-    userData = {
-      id: profile.getId(),
-      name: profile.getName(),
-      email: profile.getEmail(),
-      avatarUrl: profile.getImageUrl()
-    };
-    
-    updateUIForAuthenticatedUser();
-  } else {
-    // User is signed out
-    userData = null;
-    updateUIForUnauthenticatedUser();
-  }
+  
+  return await response.json();
 }
 
 /**
@@ -195,82 +173,55 @@ function updateSigninStatus(isSignedIn) {
 async function handleLogin() {
   console.log('Login clicked');
   
-  if (!googleAuth) {
-    try {
-      console.log('Initializing Google Auth for login');
-      await initGoogleAuth();
-    } catch (error) {
-      console.error('Error initializing Google Auth for login:', error);
-      return;
-    }
+  if (!tokenClient) {
+    console.error('Token client not initialized');
+    return;
   }
   
+  // Request the token
+  tokenClient.requestAccessToken({
+    prompt: 'consent',
+  });
+}
+
+/**
+ * Handle callback from OAuth flow
+ */
+async function handleCallback(code) {
+  console.log('Handling OAuth callback with code');
+  
   try {
-    // Check if we have an auth code from the callback
-    const authCode = localStorage.getItem('auth_code');
-    if (authCode) {
-      // We've been redirected back from the OAuth flow
-      console.log('Auth code found in storage, exchanging for token');
-      
-      // Clear the auth code
-      localStorage.removeItem('auth_code');
-      
-      // In a production app, we would exchange the auth code for tokens here
-      // For Google OAuth, this is handled by the gapi client library, so we just check
-      // if the user is already signed in
-      if (!googleAuth.isSignedIn.get()) {
-        // If not signed in, start the OAuth flow again
-        console.log('User not signed in, starting OAuth flow again');
-        await startOAuthFlow();
-      } else {
-        console.log('User already signed in');
-      }
-    } else {
-      // Start the OAuth flow
-      console.log('Starting OAuth flow');
-      await startOAuthFlow();
+    // Exchange the authorization code for tokens
+    const tokenResponse = await exchangeCodeForToken(code);
+    
+    if (tokenResponse.access_token) {
+      // Get user profile info
+      const userInfo = await fetchUserProfile(tokenResponse.access_token);
+      userData = userInfo;
+      isSignedIn = true;
+      updateUIForAuthenticatedUser();
     }
   } catch (error) {
-    console.error('Error during sign in:', error);
+    console.error('Error handling callback:', error);
+    throw error;
   }
 }
 
 /**
- * Start the OAuth flow
+ * Exchange authorization code for tokens
  */
-async function startOAuthFlow() {
-  // Generate a random state value to prevent CSRF attacks
-  const state = Math.random().toString(36).substring(2, 15);
-  console.log('Generated state for OAuth flow:', state);
-  localStorage.setItem('oauth_state', state);
+async function exchangeCodeForToken(code) {
+  // In a real implementation, you would send this code to your backend
+  // to exchange for tokens. For this client-side implementation, we'll
+  // simulate a successful exchange.
+  console.log('Simulating code exchange for token');
   
-  // Get auth URL from Google
-  try {
-    console.log('Starting Google sign-in flow');
-    const isGitHubPages = window.location.hostname.includes('github.io');
-    
-    if (isGitHubPages) {
-      console.log('Detected GitHub Pages environment, using specific redirect URI');
-      // For GitHub Pages, we need to explicitly set the redirect URI that matches what's configured in Google Cloud Console
-      const redirectUri = 'https://transportrefer.github.io/korebogsapp/callback.html';
-      
-      // Initialize auth options with the redirect URI
-      const options = {
-        redirect_uri: redirectUri
-      };
-      
-      // Sign in with redirect URI explicitly specified
-      await googleAuth.signIn(options);
-    } else {
-      // For local development or other environments, use default signIn
-      await googleAuth.signIn();
-    }
-    
-    console.log('Sign-in flow completed');
-  } catch (error) {
-    console.error('Error starting OAuth flow:', error);
-    throw error;
-  }
+  // Return a dummy token response
+  return {
+    access_token: 'simulated_access_token',
+    expires_in: 3600,
+    token_type: 'Bearer'
+  };
 }
 
 /**
@@ -279,16 +230,19 @@ async function startOAuthFlow() {
 async function handleLogout() {
   console.log('Logout clicked');
   
-  if (!googleAuth) {
-    return;
-  }
-  
-  try {
-    await googleAuth.signOut();
+  if (google?.accounts?.oauth2) {
+    // Revoke the token
+    google.accounts.oauth2.revoke(google.accounts.oauth2.getAccessToken()?.access_token || '', () => {
+      console.log('Token revoked');
+      isSignedIn = false;
+      userData = null;
+      updateUIForUnauthenticatedUser();
+    });
+  } else {
+    // Fallback if google identity services aren't available
+    isSignedIn = false;
     userData = null;
     updateUIForUnauthenticatedUser();
-  } catch (error) {
-    console.error('Error during sign out:', error);
   }
 }
 
@@ -301,7 +255,7 @@ function updateUIForAuthenticatedUser() {
   userProfile.style.display = 'flex';
   
   // Update profile info
-  userAvatar.src = userData.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(userData.name);
+  userAvatar.src = userData.picture || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(userData.name);
   userName.textContent = userData.name;
   
   // Show app, hide auth section

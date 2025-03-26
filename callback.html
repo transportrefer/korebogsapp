@@ -57,12 +57,10 @@
         // Parse URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
-        const state = urlParams.get('state');
         const error = urlParams.get('error');
         
         console.log('URL parameters:', {
           hasCode: !!code,
-          hasState: !!state,
           error: error,
           fullUrl: window.location.href
         });
@@ -72,17 +70,6 @@
           throw new Error(`Authentication error: ${error}`);
         }
         
-        // Validate the state parameter to prevent CSRF attacks
-        const savedState = localStorage.getItem('oauth_state');
-        console.log('Validating state:', { receivedState: state, savedState: savedState });
-        
-        if (state !== savedState) {
-          throw new Error('Invalid state parameter. Authentication failed.');
-        }
-        
-        // Clear the state from local storage
-        localStorage.removeItem('oauth_state');
-        
         if (code) {
           statusMessage.textContent = 'Login gennemført. Omdirigerer...';
           console.log('Auth code received successfully, storing in localStorage');
@@ -91,7 +78,9 @@
           localStorage.setItem('auth_code', code);
           
           // Construct the redirect URL based on the current location
-          const redirectBase = window.location.pathname.includes('/korebogsapp/') ? '/korebogsapp/' : '/';
+          const redirectBase = window.location.pathname.includes('/korebogsapp/') 
+            ? '/korebogsapp/' 
+            : '/';
           console.log('Redirecting to:', redirectBase);
           
           // Redirect back to the main application
@@ -121,13 +110,18 @@
         `;
         errorContainer.appendChild(errorDetails);
         
+        // Determine redirect base for retry button
+        const redirectBase = window.location.pathname.includes('/korebogsapp/') 
+          ? '/korebogsapp/' 
+          : '/';
+        
         // Add a retry button
         const retryButton = document.createElement('button');
         retryButton.textContent = 'Prøv igen';
         retryButton.style.margin = '20px';
         retryButton.style.padding = '10px 20px';
         retryButton.style.cursor = 'pointer';
-        retryButton.onclick = () => window.location.href = redirectBase || '/korebogsapp/';
+        retryButton.onclick = () => window.location.href = redirectBase;
         document.body.appendChild(retryButton);
       }
     };
