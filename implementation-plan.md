@@ -51,11 +51,63 @@ For at sikre hurtig udvikling af en brugsbar app prioriteres features således:
 
 ### 3.1. Autentificering Bug Fixes 🔄
 - [ ] Løs problem med session persistence (bruger skal logge ind igen ved nye tabs/vinduer)
-  - Implementer cookie eller localStorage-baseret session management
-  - Gem tokens sikkert og genskab session når appen indlæses
+  - **Problem**: Simulated tokens brugt i stedet for rigtige Google OAuth tokens
+  - **Implementationsskridt**:
+    1. Fjern al kode for simulated tokens (`exchangeCodeForToken`, simulated refresh)
+    2. Opdater `checkAuthStatus` til at håndtere token udløb korrekt:
+      - Ved udløb, ryd alle auth data og informer brugeren om behov for re-login
+      - Fjern falsk token refresh logik der skaber "zombie" sessions
+    3. Gem kun rigtige tokens fra Google's OAuth flow
+    4. Kontroller at token expiry valideres korrekt:
+      - Hvis `Token expiry < current time`, log ud brugeren
+      - Dokumenter at brugeren må re-authenticere efter token udløb (typisk 1 time)
+    5. Implementer korrekt localStorage opbevaring når tokens modtages
+    6. Test token persistence i multiple tabs og efter browser genstart
+    
 - [ ] Fikser logout funktionalitet, som ikke fungerer korrekt
-  - Sikre at tokens revokeres korrekt ved logout
-  - Opdater UI korrekt efter logout
+  - **Problem**: Blanding af ID token revocation og access token revocation APIs
+  - **Implementationsskridt**:
+    1. Fjern `google.accounts.id.revoke()` kald hvis ikke relevant for flow
+    2. Behold token revocation via `https://oauth2.googleapis.com/revoke` endpoint:
+      - Sikre at vi bruger det korrekte access token
+      - Implementer robust fejlhåndtering ved revocation
+    3. Opdater rækkefølgen i logout processen:
+      - Opdater UI først for bedre brugeroplevelse
+      - Foretag token revocation asynkront
+      - Ryd altid lokale tokens uanset revocation status
+    4. Tilføj detaljeret logging til logout processen
+    5. Test logout funktionalitet grundigt, både online og offline
+
+- [ ] Refaktorer `initAuth` flow for at fjerne kodeforvirring
+  - **Problem**: Blanding af Authorization Code flow og Token Client flow
+  - **Implementationsskridt**:
+    1. Fjern eller refaktorer koden der håndterer `auth_code` i localStorage
+    2. Simplificer `initAuth` til kun at anvende Token Client flow
+    3. Fjern unødvendige handler funktioner (`handleCallback`)
+    4. Sikre at alle UI elementer initialiseres korrekt før brug
+    5. Tilføj fejlhåndtering for manglende DOM elementer
+
+- [ ] Implementer korrekt fejlhåndtering for auth-relaterede fejl
+  - **Problem**: Uklar fejlhåndtering ved auth problemer
+  - **Implementationsskridt**:
+    1. Tilføj meningsfulde fejlbeskeder til brugeren
+    2. Log alle auth fejl detaljeret til konsol for debugging
+    3. Håndter edge cases hvor Google API ikke er tilgængelig
+    4. Tilføj retry logik hvor det giver mening
+    5. Sikre fejltilstande håndteres gracefully uden at bryde UI
+
+- [ ] Test og verifikation
+  - Verificer session persistence på tværs af:
+    1. Multiple browser tabs
+    2. Browser genstart
+    3. Diverse enheder (desktop, mobile)
+  - Test logout flow:
+    1. Verificer UI opdatering
+    2. Verificer token revocation (via Google's OAuth Playground)
+    3. Verificer opførsel ved manglende netværk
+  - Dokumenter kendte begrænsninger:
+    1. Access tokens udløber typisk efter 1 time
+    2. Refresh tokens kræver backend implementation
 
 ### 4. Lokationsbaserede Funktioner 🔄
 - [ ] Implementer Google Maps integration

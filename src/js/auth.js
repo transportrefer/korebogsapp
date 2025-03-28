@@ -18,7 +18,6 @@ const AUTH_CONFIG = {
 // LocalStorage keys for authentication
 const STORAGE_KEYS = {
   ACCESS_TOKEN: 'auth_access_token',
-  REFRESH_TOKEN: 'auth_refresh_token',
   TOKEN_EXPIRY: 'auth_token_expiry',
   USER_DATA: 'auth_user_data'
 };
@@ -63,40 +62,25 @@ export async function initAuth() {
   userName = document.getElementById('user-name');
   
   // Set up event listeners
-  loginBtn.addEventListener('click', handleLogin);
-  loginMainBtn.addEventListener('click', handleLogin);
-  logoutBtn.addEventListener('click', handleLogout);
+  if (loginBtn) loginBtn.addEventListener('click', handleLogin);
+  if (loginMainBtn) loginMainBtn.addEventListener('click', handleLogin);
+  if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
   
   // Load the Google Identity Services
   await loadGoogleIdentityServices();
   
-  // Check if there's an auth code from the callback
-  const authCode = localStorage.getItem('auth_code');
-  if (authCode) {
-    // We've been redirected back from the OAuth flow
-    console.log('Auth code found in storage');
+  // Check for existing auth state (tokens in localStorage)
+  const authStatus = await checkAuthStatus();
+  console.log('Initial auth status check:', authStatus ? 'Authenticated' : 'Not authenticated');
+  
+  // If authenticated, make sure UI is updated correctly
+  if (authStatus && userData) {
+    updateUIForAuthenticatedUser();
     
-    // Clear the auth code
-    localStorage.removeItem('auth_code');
-    
-    // Attempt to get user info using the auth code
-    try {
-      await handleCallback(authCode);
-    } catch (error) {
-      console.error('Error handling callback:', error);
-    }
+    // Dispatch event that user is authenticated to ensure all components are notified
+    window.dispatchEvent(new CustomEvent('userAuthenticated', { detail: userData }));
   } else {
-    // Check if we have stored tokens and restore session
-    const authStatus = await checkAuthStatus();
-    console.log('Initial auth status check:', authStatus ? 'Authenticated' : 'Not authenticated');
-    
-    // If authenticated, make sure UI is updated correctly
-    if (authStatus && userData) {
-      updateUIForAuthenticatedUser();
-      
-      // Dispatch event that user is authenticated to ensure all components are notified
-      window.dispatchEvent(new CustomEvent('userAuthenticated', { detail: userData }));
-    }
+    updateUIForUnauthenticatedUser();
   }
   
   return {
@@ -165,12 +149,11 @@ function initializeGIS() {
         // Calculate expiry time
         const expiryTime = Date.now() + (tokenResponse.expires_in * 1000);
         
-        // Store tokens
+        // Store token and expiry time
         localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokenResponse.access_token);
-        if (tokenResponse.refresh_token) {
-          localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokenResponse.refresh_token);
-        }
         localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
+        
+        console.log('Token stored in localStorage with expiry:', new Date(expiryTime).toISOString());
       }
       
       // Get user profile info
@@ -244,66 +227,12 @@ async function handleLogin() {
 }
 
 /**
- * Handle callback from OAuth flow
- */
-async function handleCallback(code) {
-  console.log('Handling OAuth callback with code');
-  
-  try {
-    // Exchange the authorization code for tokens
-    const tokenResponse = await exchangeCodeForToken(code);
-    
-    if (tokenResponse.access_token) {
-      // Get user profile info
-      const userInfo = await fetchUserProfile(tokenResponse.access_token);
-      userData = userInfo;
-      isSignedIn = true;
-      updateUIForAuthenticatedUser();
-    }
-  } catch (error) {
-    console.error('Error handling callback:', error);
-    throw error;
-  }
-}
-
-/**
- * Exchange authorization code for tokens
- */
-async function exchangeCodeForToken(code) {
-  // In a real implementation, you would send this code to your backend
-  // to exchange for tokens. For this client-side implementation, we'll
-  // simulate a successful exchange.
-  console.log('Simulating code exchange for token');
-  
-  // Create a token response (in real implementation this would come from the server)
-  const tokenResponse = {
-    access_token: 'simulated_access_token_' + Date.now(), // Add timestamp to ensure uniqueness
-    refresh_token: 'simulated_refresh_token_' + Date.now(),
-    expires_in: 3600,
-    token_type: 'Bearer'
-  };
-  
-  // Calculate expiry time
-  const expiryTime = Date.now() + (tokenResponse.expires_in * 1000);
-  
-  // Store tokens in localStorage
-  localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokenResponse.access_token);
-  localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokenResponse.refresh_token);
-  localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
-  
-  console.log('Tokens stored in localStorage with expiry:', new Date(expiryTime).toISOString());
-  
-  return tokenResponse;
-}
-
-/**
  * Handle logout button click
  */
 async function handleLogout() {
   console.log('Logout clicked');
   
-  // Store user email before clearing data
-  const userEmail = userData?.email;
+  // Store access token before clearing
   const accessToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
   
   // First update UI state for immediate feedback
@@ -311,49 +240,31 @@ async function handleLogout() {
   userData = null;
   updateUIForUnauthenticatedUser();
   
-  // Revoke tokens with Google if possible
+  // Revoke the access token with Google if possible
   let revocationSuccess = false;
   
-  if (google && google.accounts) {
+  if (accessToken) {
     try {
-      // For ID tokens, use google.accounts.id.revoke
-      if (userEmail && google.accounts.id) {
-        console.log('Revoking ID token for:', userEmail);
-        await new Promise((resolve) => {
-          google.accounts.id.revoke(userEmail, (response) => {
-            console.log('ID token revocation response:', response);
-            revocationSuccess = response.successful;
-            resolve();
-          });
-        });
-      }
-      
-      // For access tokens, we'd ideally use a request to the revocation endpoint
-      // In a real implementation with actual access tokens, you could do:
-      if (accessToken && !revocationSuccess) {
-        console.log('Attempting to revoke access token');
-        try {
-          const revokeEndpoint = 'https://oauth2.googleapis.com/revoke';
-          const response = await fetch(`${revokeEndpoint}?token=${accessToken}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded'
-            }
-          });
-          
-          if (response.ok) {
-            console.log('Access token successfully revoked');
-            revocationSuccess = true;
-          } else {
-            console.warn('Failed to revoke access token:', response.status);
-          }
-        } catch (error) {
-          console.error('Error revoking access token:', error);
+      console.log('Attempting to revoke access token');
+      const revokeEndpoint = 'https://oauth2.googleapis.com/revoke';
+      const response = await fetch(`${revokeEndpoint}?token=${accessToken}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
         }
+      });
+      
+      if (response.ok) {
+        console.log('Access token successfully revoked');
+        revocationSuccess = true;
+      } else {
+        console.warn('Failed to revoke access token:', response.status);
       }
     } catch (error) {
-      console.error('Error during logout process:', error);
+      console.error('Error revoking access token:', error);
     }
+  } else {
+    console.log('No access token available to revoke');
   }
   
   // Always clear local storage regardless of revocation success
@@ -370,15 +281,6 @@ async function handleLogout() {
  */
 function updateUIForAuthenticatedUser() {
   console.log('Updating UI for authenticated user');
-  console.log('loginBtn:', loginBtn);
-  console.log('userProfile:', userProfile);
-  console.log('authSection:', authSection);
-  console.log('appSection:', appSection);
-  
-  // Store user data in localStorage for persistence
-  if (userData) {
-    localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
-  }
   
   // Update menu display
   if (loginBtn) loginBtn.style.display = 'none';
@@ -423,6 +325,20 @@ function updateUIForUnauthenticatedUser() {
 }
 
 /**
+ * Clear all authentication data
+ */
+function clearAuthData() {
+  // Clear auth state
+  isSignedIn = false;
+  userData = null;
+  
+  // Clear localStorage
+  localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+  localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
+  localStorage.removeItem(STORAGE_KEYS.USER_DATA);
+}
+
+/**
  * Check if the user is authenticated
  * @returns {boolean} True if authenticated, false otherwise
  */
@@ -434,7 +350,6 @@ export async function checkAuthStatus() {
   
   // Check for tokens in localStorage
   const storedToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-  const storedRefreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
   const storedExpiry = localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY);
   const storedUserData = localStorage.getItem(STORAGE_KEYS.USER_DATA);
   
@@ -455,67 +370,16 @@ export async function checkAuthStatus() {
   
   // Check if token has expired
   if (storedExpiry && parseInt(storedExpiry, 10) < Date.now()) {
-    console.log('Token has expired, attempting refresh...');
-    
-    // In a real implementation, we would use the refresh token to get a new access token
-    // For now, since we're using a simulation, we'll just simulate a token refresh
-    if (storedRefreshToken) {
-      try {
-        // Simulate token refresh
-        const newTokenResponse = {
-          access_token: 'refreshed_access_token_' + Date.now(),
-          expires_in: 3600
-        };
-        
-        // Calculate new expiry time
-        const newExpiryTime = Date.now() + (newTokenResponse.expires_in * 1000);
-        
-        // Store new token and expiry
-        localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newTokenResponse.access_token);
-        localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, newExpiryTime.toString());
-        
-        console.log('Token refreshed successfully');
-        
-        // Update auth state
-        isSignedIn = true;
-        return true;
-      } catch (error) {
-        console.error('Error refreshing token:', error);
-        clearAuthData();
-        return false;
-      }
-    } else {
-      console.log('No refresh token available');
-      clearAuthData();
-      return false;
-    }
+    console.log('Token has expired, user needs to log in again');
+    clearAuthData();
+    return false;
   }
   
   // Token is valid, restore session state
   console.log('Valid token found, restoring session');
   isSignedIn = true;
   
-  // Update UI if needed (may be called before UI elements exist)
-  if (userProfile && loginBtn) {
-    updateUIForAuthenticatedUser();
-  }
-  
   return true;
-}
-
-/**
- * Clear all authentication data
- */
-function clearAuthData() {
-  // Clear auth state
-  isSignedIn = false;
-  userData = null;
-  
-  // Clear localStorage
-  localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-  localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
-  localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
-  localStorage.removeItem(STORAGE_KEYS.USER_DATA);
 }
 
 // REAL IMPLEMENTATION TO COME:
