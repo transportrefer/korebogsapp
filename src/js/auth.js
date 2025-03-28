@@ -18,9 +18,15 @@ const AUTH_CONFIG = {
 // LocalStorage keys for authentication
 const STORAGE_KEYS = {
   ACCESS_TOKEN: 'auth_access_token',
+  REFRESH_TOKEN: 'auth_refresh_token',
   TOKEN_EXPIRY: 'auth_token_expiry',
-  USER_DATA: 'auth_user_data'
+  USER_DATA: 'auth_user_data',
+  DEVICE_ID: 'auth_device_id'
 };
+
+// Cookie name for persistent device recognition
+const DEVICE_COOKIE_NAME = 'kb_device_recognized';
+const DEVICE_COOKIE_DAYS = 30; // Cookie expires after 30 days
 
 // Log configuration for debugging
 console.log('Auth configuration:', {
@@ -62,14 +68,17 @@ export async function initAuth() {
   userName = document.getElementById('user-name');
   
   // Set up event listeners
-  if (loginBtn) loginBtn.addEventListener('click', handleLogin);
-  if (loginMainBtn) loginMainBtn.addEventListener('click', handleLogin);
-  if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+  loginBtn?.addEventListener('click', handleLogin);
+  loginMainBtn?.addEventListener('click', handleLogin);
+  logoutBtn?.addEventListener('click', handleLogout);
   
   // Load the Google Identity Services
   await loadGoogleIdentityServices();
   
-  // Check for existing auth state (tokens in localStorage)
+  // Check if device is recognized
+  const isDeviceRecognized = checkDeviceCookie();
+  
+  // Check if we have stored tokens and restore session
   const authStatus = await checkAuthStatus();
   console.log('Initial auth status check:', authStatus ? 'Authenticated' : 'Not authenticated');
   
@@ -77,10 +86,21 @@ export async function initAuth() {
   if (authStatus && userData) {
     updateUIForAuthenticatedUser();
     
+    // Set device cookie if not already set
+    if (!isDeviceRecognized) {
+      setDeviceCookie();
+    }
+    
     // Dispatch event that user is authenticated to ensure all components are notified
     window.dispatchEvent(new CustomEvent('userAuthenticated', { detail: userData }));
   } else {
+    // Ensure UI is updated if not authenticated
     updateUIForUnauthenticatedUser();
+    
+    // If device is recognized but not authenticated, try silent sign-in
+    if (isDeviceRecognized && !authStatus) {
+      trySilentSignIn();
+    }
   }
   
   return {
@@ -149,11 +169,12 @@ function initializeGIS() {
         // Calculate expiry time
         const expiryTime = Date.now() + (tokenResponse.expires_in * 1000);
         
-        // Store token and expiry time
+        // Store tokens
         localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokenResponse.access_token);
+        if (tokenResponse.refresh_token) {
+          localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokenResponse.refresh_token);
+        }
         localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
-        
-        console.log('Token stored in localStorage with expiry:', new Date(expiryTime).toISOString());
       }
       
       // Get user profile info
@@ -165,6 +186,9 @@ function initializeGIS() {
           
           // Store user data for session persistence
           localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userInfo));
+          
+          // Set device cookie for persistent recognition
+          setDeviceCookie();
           
           // Make sure to update the UI
           updateUIForAuthenticatedUser();
@@ -227,12 +251,23 @@ async function handleLogin() {
 }
 
 /**
+ * Handle callback from OAuth flow
+ */
+async function handleCallback(code) {
+  console.log('Handling OAuth callback with code');
+  
+  // This functionality is no longer needed as we're using Token Client flow
+  console.error('Authorization code flow is not implemented');
+  throw new Error('Authorization code flow is not implemented');
+}
+
+/**
  * Handle logout button click
  */
 async function handleLogout() {
   console.log('Logout clicked');
   
-  // Store access token before clearing
+  // Store user email before clearing data
   const accessToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
   
   // First update UI state for immediate feedback
@@ -240,35 +275,41 @@ async function handleLogout() {
   userData = null;
   updateUIForUnauthenticatedUser();
   
-  // Revoke the access token with Google if possible
+  // Revoke tokens with Google if possible
   let revocationSuccess = false;
   
-  if (accessToken) {
+  if (google && google.accounts) {
     try {
-      console.log('Attempting to revoke access token');
-      const revokeEndpoint = 'https://oauth2.googleapis.com/revoke';
-      const response = await fetch(`${revokeEndpoint}?token=${accessToken}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+      // For access tokens, use the revocation endpoint
+      if (accessToken) {
+        console.log('Attempting to revoke access token');
+        try {
+          const revokeEndpoint = 'https://oauth2.googleapis.com/revoke';
+          const response = await fetch(`${revokeEndpoint}?token=${accessToken}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          });
+          
+          if (response.ok) {
+            console.log('Access token successfully revoked');
+            revocationSuccess = true;
+          } else {
+            console.warn('Failed to revoke access token:', response.status);
+          }
+        } catch (error) {
+          console.error('Error revoking access token:', error);
         }
-      });
-      
-      if (response.ok) {
-        console.log('Access token successfully revoked');
-        revocationSuccess = true;
-      } else {
-        console.warn('Failed to revoke access token:', response.status);
       }
     } catch (error) {
-      console.error('Error revoking access token:', error);
+      console.error('Error during logout process:', error);
     }
-  } else {
-    console.log('No access token available to revoke');
   }
   
-  // Always clear local storage regardless of revocation success
+  // Always clear local storage and cookies
   clearAuthData();
+  clearDeviceCookie();
   
   // Dispatch signout event to notify other components
   window.dispatchEvent(new CustomEvent('userSignedOut'));
@@ -281,6 +322,15 @@ async function handleLogout() {
  */
 function updateUIForAuthenticatedUser() {
   console.log('Updating UI for authenticated user');
+  console.log('loginBtn:', loginBtn);
+  console.log('userProfile:', userProfile);
+  console.log('authSection:', authSection);
+  console.log('appSection:', appSection);
+  
+  // Store user data in localStorage for persistence
+  if (userData) {
+    localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
+  }
   
   // Update menu display
   if (loginBtn) loginBtn.style.display = 'none';
@@ -325,20 +375,6 @@ function updateUIForUnauthenticatedUser() {
 }
 
 /**
- * Clear all authentication data
- */
-function clearAuthData() {
-  // Clear auth state
-  isSignedIn = false;
-  userData = null;
-  
-  // Clear localStorage
-  localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-  localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
-  localStorage.removeItem(STORAGE_KEYS.USER_DATA);
-}
-
-/**
  * Check if the user is authenticated
  * @returns {boolean} True if authenticated, false otherwise
  */
@@ -350,6 +386,7 @@ export async function checkAuthStatus() {
   
   // Check for tokens in localStorage
   const storedToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+  const storedRefreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
   const storedExpiry = localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY);
   const storedUserData = localStorage.getItem(STORAGE_KEYS.USER_DATA);
   
@@ -370,8 +407,14 @@ export async function checkAuthStatus() {
   
   // Check if token has expired
   if (storedExpiry && parseInt(storedExpiry, 10) < Date.now()) {
-    console.log('Token has expired, user needs to log in again');
+    console.log('Token has expired');
+    
+    // Token has expired - clearing auth data
     clearAuthData();
+    updateUIForUnauthenticatedUser();
+    
+    // Show expired session message to user
+    showSessionExpiredMessage();
     return false;
   }
   
@@ -379,7 +422,165 @@ export async function checkAuthStatus() {
   console.log('Valid token found, restoring session');
   isSignedIn = true;
   
+  // Update UI if needed (may be called before UI elements exist)
+  if (userProfile && loginBtn) {
+    updateUIForAuthenticatedUser();
+  }
+  
   return true;
+}
+
+/**
+ * Show a message to the user that their session has expired
+ */
+function showSessionExpiredMessage() {
+  showMessage('Din session er udløbet. Log venligst ind igen.', 'error');
+}
+
+/**
+ * Clear all authentication data
+ */
+function clearAuthData() {
+  // Clear auth state
+  isSignedIn = false;
+  userData = null;
+  
+  // Clear localStorage
+  localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+  localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+  localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
+  localStorage.removeItem(STORAGE_KEYS.USER_DATA);
+  
+  // Store last email for hint if available
+  if (userData?.email) {
+    localStorage.setItem('last_email', userData.email);
+  }
+}
+
+/**
+ * Set a persistent cookie to recognize this device
+ */
+function setDeviceCookie() {
+  const deviceId = generateDeviceId();
+  localStorage.setItem(STORAGE_KEYS.DEVICE_ID, deviceId);
+  
+  // Set cookie that expires in X days
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + DEVICE_COOKIE_DAYS);
+  
+  // Set secure httpOnly cookie if on HTTPS, otherwise regular cookie
+  const secure = window.location.protocol === 'https:' ? '; secure' : '';
+  document.cookie = `${DEVICE_COOKIE_NAME}=${deviceId}; expires=${expiryDate.toUTCString()}; path=/${secure}; SameSite=Lax`;
+  
+  console.log('Device cookie set, expires:', expiryDate.toUTCString());
+}
+
+/**
+ * Check if device cookie exists
+ * @returns {boolean} True if device is recognized
+ */
+function checkDeviceCookie() {
+  const cookies = document.cookie.split(';');
+  const deviceCookie = cookies.find(cookie => cookie.trim().startsWith(`${DEVICE_COOKIE_NAME}=`));
+  
+  if (deviceCookie) {
+    const deviceId = deviceCookie.split('=')[1];
+    console.log('Device recognized from cookie');
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Clear device recognition cookie
+ */
+function clearDeviceCookie() {
+  // Set cookie with past expiry to delete it
+  document.cookie = `${DEVICE_COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  localStorage.removeItem(STORAGE_KEYS.DEVICE_ID);
+  console.log('Device cookie cleared');
+}
+
+/**
+ * Generate a unique device ID
+ * @returns {string} Device ID
+ */
+function generateDeviceId() {
+  return 'device_' + Math.random().toString(36).substring(2, 15) + 
+         Math.random().toString(36).substring(2, 15);
+}
+
+/**
+ * Try to sign in silently (without user interaction)
+ * This is used when device is recognized but token has expired
+ */
+function trySilentSignIn() {
+  if (!tokenClient) {
+    console.error('Token client not initialized');
+    return;
+  }
+  
+  console.log('Attempting silent sign-in for recognized device');
+  
+  // Show a gentle notification that we're trying to restore session
+  showMessage('Gendanner din session...', 'info');
+  
+  // Request access token without user interaction if possible
+  tokenClient.requestAccessToken({ 
+    prompt: 'none',
+    hint: localStorage.getItem('last_email') || '' // Optional: provide hint if available
+  });
+}
+
+/**
+ * Show a message to the user
+ * @param {string} message - Message to display
+ * @param {string} type - Message type (error, info, success)
+ */
+function showMessage(message, type = 'error') {
+  // Try to find or create a container for the message
+  let messageContainer = document.getElementById('auth-message-container');
+  
+  if (!messageContainer) {
+    messageContainer = document.createElement('div');
+    messageContainer.id = 'auth-message-container';
+    document.body.appendChild(messageContainer);
+  }
+  
+  // Set style based on message type
+  let backgroundColor, textColor;
+  
+  switch (type) {
+    case 'error':
+      backgroundColor = '#f8d7da';
+      textColor = '#721c24';
+      break;
+    case 'info':
+      backgroundColor = '#d1ecf1';
+      textColor = '#0c5460';
+      break;
+    case 'success':
+      backgroundColor = '#d4edda';
+      textColor = '#155724';
+      break;
+    default:
+      backgroundColor = '#f8d7da';
+      textColor = '#721c24';
+  }
+  
+  messageContainer.style.cssText = `position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
+    background-color: ${backgroundColor}; color: ${textColor}; padding: 10px 20px; 
+    border-radius: 5px; z-index: 1000; box-shadow: 0 2px 5px rgba(0,0,0,0.2);`;
+  
+  messageContainer.textContent = message;
+  
+  // Remove the message after 5 seconds
+  setTimeout(() => {
+    if (messageContainer && messageContainer.parentNode) {
+      messageContainer.parentNode.removeChild(messageContainer);
+    }
+  }, 5000);
 }
 
 // REAL IMPLEMENTATION TO COME:
